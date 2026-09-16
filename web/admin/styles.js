@@ -28,6 +28,11 @@ const STYLES = `
             --tint:rgba(255,255,255,.06); --shadow:0 1px 2px rgba(0,0,0,.4); }
   }
   * { box-sizing: border-box; }
+  /* The hidden attribute is only a UA rule of display:none, so any class that
+     sets display silently outranks it. The admin toggles visibility this way in
+     a dozen places and .navlock sets display:flex; without this the padlocks
+     showed on every nav item regardless of plan. */
+  [hidden] { display: none !important; }
   body { margin:0; background:var(--bg); color:var(--text);
     font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   a { color:inherit; }
@@ -51,6 +56,15 @@ const STYLES = `
   .navcount span { font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--nav-muted); }
   .navcount b { font-size:19px; font-variant-numeric:tabular-nums; }
 
+  /* The plan, directly under the number it governs. A merchant asking "why has
+     my install card stopped appearing" should find both facts in one glance. */
+  .navplan { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 18px; text-decoration:none; color:var(--nav-fg); font-size:12.5px;
+    border-bottom:1px solid rgba(255,255,255,.1); }
+  .navplan:hover { background:rgba(255,255,255,.06); }
+  .navplan em { font-style:normal; color:var(--nav-muted); font-size:11.5px; }
+  .navplan.free em { color:#ffd166; }
+
   .navgroup { margin:16px 18px 6px; font-size:11px; letter-spacing:.07em;
     text-transform:uppercase; color:var(--nav-muted); }
   .nav a { display:flex; align-items:center; gap:10px; padding:8px 18px; text-decoration:none;
@@ -58,13 +72,18 @@ const STYLES = `
   .nav a:hover { background:rgba(255,255,255,.06); }
   .nav a.on { background:var(--nav-active); border-left-color:currentColor; font-weight:600; }
   .nav a svg { width:17px; height:17px; flex:0 0 auto; opacity:.85; }
+  .nav a span:nth-of-type(1) { flex:1 1 auto; }
+  .navlock { display:flex; align-items:center; }
+  .navlock svg { width:13px; height:13px; opacity:.6; }
+  .nav a.gated { opacity:.72; }
   .nav .spacer { flex:1 1 auto; }
   .navfoot { padding:14px 18px; border-top:1px solid rgba(255,255,255,.1);
     color:var(--nav-muted); font-size:12px; }
 
-  /* Straddles the sidebar's edge, below the install count so it cannot sit on
-     top of the number it is next to. */
-  .navtoggle { position:fixed; top:62px; left:222px; z-index:10; width:26px; height:26px;
+  /* In the content column's left gutter rather than over the sidebar. The
+     sidebar's top two rows are the install count and the plan, both of which
+     run the full width, so anything floating there covers a number or a word. */
+  .navtoggle { position:fixed; top:16px; left:244px; z-index:10; width:26px; height:26px;
     padding:0; border-radius:50%; border:1px solid var(--line); background:var(--card);
     color:var(--text); font-size:14px; line-height:1; cursor:pointer; box-shadow:var(--shadow); }
   .shell.collapsed .navtoggle { left:12px; }
@@ -300,6 +319,50 @@ const STYLES = `
     .what2 td:first-child { width:auto; padding-top:10px; border-top:1px solid var(--line); }
     .what2 tr:first-child td:first-child { border-top:0; }
   }
+
+  /* ------------------------------------------------------------ plans */
+
+  /* A link styled as the primary button. Used where the action is a route or an
+     external page rather than something that submits — an <a> keeps middle-click
+     and "open in new tab" working, which a <button> would take away. */
+  a.btn { display:inline-block; text-decoration:none; font-weight:600; border-radius:8px;
+    padding:9px 16px; background:var(--accent); color:var(--accent-fg); }
+  a.btn.small { padding:5px 11px; font-size:13px; }
+  a.btn.secondary { background:transparent; color:var(--text); border:1px solid var(--line); }
+
+  .locked { text-align:center; padding:34px 22px; }
+  .locked h2 { font-size:16px; }
+  .locked .hint { max-width:52ch; margin:6px auto 16px; }
+  .locked .row { justify-content:center; }
+
+  .plancards { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px;
+    margin-bottom:14px; }
+  .plan { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px;
+    box-shadow:var(--shadow); display:flex; flex-direction:column; gap:10px; position:relative; }
+  /* The current plan is outlined rather than tinted: a merchant scanning three
+     cards needs to find "the one I am on" before they read any of the prices. */
+  .plan.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), var(--shadow); }
+  .plan .tag { position:absolute; top:-9px; right:16px; font-size:11px; font-weight:700;
+    letter-spacing:.03em; text-transform:uppercase; padding:3px 8px; border-radius:99px;
+    background:var(--accent); color:var(--accent-fg); }
+  .plan .tag.save { background:var(--ok); color:#fff; }
+  .plan h3 { margin:0; font-size:15px; }
+  .plan .price { font-size:26px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .plan .per { color:var(--muted); font-size:13px; margin-top:-6px; }
+  .plan .note { color:var(--muted); font-size:12.5px; }
+  .plan ul { list-style:none; margin:0; padding:0; font-size:13px; flex:1 1 auto; }
+  .plan li { padding:4px 0 4px 20px; position:relative; }
+  .plan li::before { content:"\\2713"; position:absolute; left:0; color:var(--ok); font-weight:700; }
+  .plan li.no { color:var(--muted); }
+  .plan li.no::before { content:"\\2014"; color:var(--muted); }
+
+  /* Free-plan allowance. A bar rather than a number alone, because "72 of 100"
+     is a fact and a bar that is nearly full is a prompt. */
+  .meter { height:8px; border-radius:99px; background:var(--tint); overflow:hidden; }
+  .meter i { display:block; height:100%; border-radius:99px; background:var(--ok); min-width:2px;
+    transition:width .3s ease; }
+  .meter i.warn { background:var(--warn-line); }
+  .meter i.full { background:var(--bad); }
 
   details { border-top:1px solid var(--line); padding:10px 0; }
   details summary { cursor:pointer; font-weight:500; }

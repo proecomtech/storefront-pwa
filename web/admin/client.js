@@ -111,7 +111,30 @@ function script() {
   var previews = {};
   var dirty = false;
   var statsData = null;
+  var plan = null;
   var tabState = { config: 'home', install: 'android' };
+
+  /**
+   * Which plan section each page belongs to.
+   *
+   * The server is the authority — every gated route refuses on its own, and
+   * /api/stats withholds the device split regardless of what this map says.
+   * This exists so the admin does not offer a merchant a page that will only
+   * answer 402, which is a worse experience than a lock they can see.
+   */
+  var ROUTE_SECTION = {
+    home: 'dashboard',
+    configuration: 'settings', 'install-message': 'settings', 'cache-assets': 'settings',
+    'offline-page': 'settings', settings: 'settings',
+    reports: 'reports', analytics: 'reports',
+    setup: 'help', faqs: 'help', plans: 'help'
+  };
+
+  /** Until /api/plan answers, nothing is locked. A flash of a padlock on a page
+   *  a merchant has paid for is worse than a beat of delay. */
+  function allows(section) {
+    return !plan || plan.sections.indexOf(section) !== -1;
+  }
 
   /*
    * Fields that map one input to one settings path.
@@ -163,7 +186,7 @@ function script() {
   /* -------------------------------------------------------------- routing */
 
   var ROUTES = ['home', 'configuration', 'install-message', 'cache-assets', 'offline-page',
-                'settings', 'reports', 'analytics', 'setup', 'faqs'];
+                'settings', 'reports', 'analytics', 'setup', 'faqs', 'plans'];
 
   function currentRoute() {
     var hash = String(location.hash || '').replace(/^#\\//, '');
@@ -181,11 +204,24 @@ function script() {
     var route = currentRoute();
 
     all('.page').forEach(function (p) { p.hidden = p.getAttribute('data-page') !== route; });
+
+    // One place owns the nav link's classes. Splitting "which page am I on"
+    // and "is this one locked" across two functions had each overwriting the
+    // other's answer depending on which ran last.
     all('[data-route]').forEach(function (a) {
-      a.className = a.getAttribute('data-route') === route ? 'on' : '';
+      var classes = [];
+      if (a.getAttribute('data-route') === route) classes.push('on');
+      if (!allows(a.getAttribute('data-section'))) classes.push('gated');
+      a.className = classes.join(' ');
     });
 
     window.scrollTo(0, 0);
+
+    // A page the plan does not cover still renders — as its upgrade panel, not
+    // as its contents — so a bookmark to #/reports lands somewhere that explains
+    // itself instead of on an empty shell or a redirect the merchant did not ask
+    // for.
+    if (!allows(ROUTE_SECTION[route])) return;
 
     // Each report is a network call a merchant should not pay for until they
     // ask to see it, so these load on arrival rather than at boot.
@@ -778,8 +814,14 @@ function script() {
 
     el('navInstalls').textContent = String(data.totals.installed);
 
-    platformTiles('installedTiles', data.platformRecent, 'installed', true);
-    platformTiles('dismissedTiles', data.platformRecent, 'dismissed', false);
+    // The free plan's response carries no device breakdown — the server strips
+    // it, because the Analytics page is what a paid plan buys and a gate the
+    // admin draws but the API does not enforce is not a gate. The tiles that
+    // depend on it are simply not drawn; the Home figures below are unaffected.
+    if (!data.platformsWithheld) {
+      platformTiles('installedTiles', data.platformRecent, 'installed', true);
+      platformTiles('dismissedTiles', data.platformRecent, 'dismissed', false);
+    }
 
     var funnel = el('funnelTiles');
     if (funnel) {
@@ -853,6 +895,177 @@ function script() {
   el('statsReload').addEventListener('click', loadStats);
   el('statsRange').addEventListener('change', loadStats);
   el('homeStatsReload').addEventListener('click', loadStats);
+
+  /* --------------------------------------------------------------- plans */
+
+  function planCard(entry) {
+    var card = node('div', 'plan' + (entry.current ? ' on' : ''));
+
+    if (entry.current) card.appendChild(node('span', 'tag', 'Current plan'));
+    else if (entry.savingPercent) card.appendChild(node('span', 'tag save', 'Save ' + entry.savingPercent + '%'));
+
+    card.appendChild(node('h3', null, entry.name));
+    card.appendChild(node('div', 'price', entry.priceLabel));
+    card.appendChild(node('div', 'per', entry.interval
+      ? entry.perMonthLabel + (entry.interval === 'year' ? ', billed yearly' : '')
+      : 'No card needed'));
+    card.appendChild(node('div', 'note', entry.billingNote));
+
+    var list = node('ul');
+
+    var installs = node('li', null, entry.installsPerMonth === null
+      ? 'Unlimited installs'
+      : entry.installsPerMonth + ' installs a month');
+    list.appendChild(installs);
+
+    list.appendChild(node('li', null, 'Full PWA configuration'));
+    list.appendChild(node('li', null, 'Quick setup wizard and FAQs'));
+    list.appendChild(node('li', entry.reports ? null : 'no',
+      'PWA / Performance reports'));
+    list.appendChild(node('li', entry.reports ? null : 'no', 'Analytics by device'));
+    card.appendChild(list);
+
+    if (entry.current) {
+      var here = node('span', 'muted', entry.id === 'free'
+        ? 'You are on this plan.'
+        : 'You are on this plan. Change or cancel on Shopify.');
+      card.appendChild(here);
+    }
+
+    // Always a link to Shopify's own plan page, even on the current plan —
+    // that page is also where a merchant cancels or switches, and sending them
+    // somewhere else to do it would be the app standing in the way.
+    var action = document.createElement('a');
+    action.className = 'btn' + (entry.current ? ' secondary' : '');
+    action.href = plan.upgradeUrl;
+    // The admin is an iframe. Without _top the merchant would get Shopify's
+    // billing page rendered inside this app's panel, which Shopify refuses to
+    // frame anyway.
+    action.target = '_top';
+    action.textContent = entry.current
+      ? (entry.id === 'free' ? 'See paid plans' : 'Manage on Shopify')
+      : 'Choose ' + entry.name;
+
+    card.appendChild(action);
+    return card;
+  }
+
+  function renderAllowance() {
+    var card = el('allowanceCard');
+    if (!card || !plan) return;
+
+    var a = plan.allowance;
+    card.hidden = !a.limited;
+    if (!a.limited) return;
+
+    var bar = el('allowanceBar');
+    bar.style.width = Math.min(100, a.percent) + '%';
+    bar.className = a.exhausted ? 'full' : (a.percent >= 80 ? 'warn' : '');
+
+    el('allowanceUsed').textContent = a.used + ' of ' + a.limit + ' used';
+
+    // The 1st of next month, in UTC, because that is the boundary the counters
+    // actually use — quoting a local date here would be wrong by a day for
+    // roughly half the world.
+    var now = new Date();
+    var reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    el('allowanceResets').textContent = 'Resets ' +
+      reset.toLocaleDateString(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+    el('allowanceNote').textContent = a.exhausted
+      ? 'This month\\u2019s free installs are used. The install card has stopped appearing until the ' +
+        'reset; customers can still install from their browser menu, and existing installs are unaffected.'
+      : a.remaining + ' left this month. The install card stops appearing when they run out.';
+  }
+
+  /* Hide a locked page's contents and show its upgrade panel instead. */
+  function lockSection(bodyId, panelId, allowed) {
+    var body = el(bodyId);
+    var panel = el(panelId);
+    if (!body || !panel) return;
+    body.hidden = !allowed;
+    panel.hidden = allowed;
+  }
+
+  function renderPlan(status) {
+    plan = status;
+
+    el('navPlanName').textContent = status.planName;
+    el('navPlan').className = 'navplan' + (status.planId === 'free' ? ' free' : '');
+    el('navPlanAction').textContent = status.planId === 'free' ? 'Upgrade' : 'Manage';
+
+    // Padlocks in the sidebar, so the boundary is visible before a merchant
+    // clicks rather than after. The link's own classes are showRoute's, not
+    // this function's — see the note there.
+    all('[data-navlock]').forEach(function (lock) {
+      var link = lock.parentNode;
+      lock.hidden = allows(link.getAttribute('data-section'));
+    });
+
+    lockSection('reportsBody', 'reportsLocked', allows('reports'));
+    lockSection('analyticsBody', 'analyticsLocked', allows('reports'));
+
+    var cards = el('planCards');
+    if (cards) {
+      clear(cards);
+      status.plans.forEach(function (entry) { cards.appendChild(planCard(entry)); });
+    }
+
+    renderAllowance();
+
+    var source = el('planSource');
+    if (source) {
+      var parts = ['Your plan is ' + status.planName + '.'];
+      if (status.cancelAtEndOfCycle) {
+        parts.push('It is set to end at the close of the current billing period, after which the ' +
+          'app returns to the free plan with every setting intact.');
+      }
+      if (status.trialEndsAt) parts.push('Trial ends ' + new Date(status.trialEndsAt).toLocaleDateString() + '.');
+      // Said plainly rather than hidden: without Partner API credentials on the
+      // server this app takes Shopify's redirect at its word and cannot see a
+      // cancellation made outside it. A merchant is entitled to know which of
+      // those two states their store is in.
+      parts.push(status.verified
+        ? 'Confirmed with Shopify ' + new Date(status.verifiedAt).toLocaleString() + '.'
+        : (status.reconciliationConfigured
+          ? 'Not yet confirmed with Shopify.'
+          : 'Recorded from your last plan change. This app is not configured to re-check it with Shopify.'));
+      source.textContent = parts.join(' ');
+    }
+
+    // Re-run the router now that the answer is known: a merchant who landed
+    // straight on #/reports was shown the page while the plan was still loading.
+    showRoute();
+  }
+
+  function loadPlan() {
+    return api('/api/plan').then(renderPlan).catch(function (err) {
+      // Non-fatal. allows() treats an unknown plan as unrestricted, so a failed
+      // read leaves the admin usable and the server still refuses what it must.
+      var source = el('planSource');
+      if (source) source.textContent = 'Could not read your plan: ' + err.message;
+    });
+  }
+
+  /*
+   * Shopify sends a merchant back here with ?plan_handle=... after they pick a
+   * plan on its pricing page. The server puts it on the body; this claims it
+   * over an authenticated call, so the shop comes from the session token rather
+   * than from the URL.
+   */
+  function claimPlanHandle(handle) {
+    return api('/api/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planHandle: handle })
+    }).then(function (status) {
+      renderPlan(status);
+      banner('info', 'Plan updated', ['You are now on the ' + status.planName + ' plan.']);
+    }).catch(function (err) {
+      banner('bad', 'Could not record your new plan', [err.message]);
+      return loadPlan();
+    });
+  }
 
   /* ------------------------------------------------------------- reports */
 
@@ -1351,6 +1564,36 @@ function script() {
   // settings form, so a slow or failing stats read must not hold up the screen a
   // merchant actually came here to edit. The sidebar's total comes from here.
   loadStats();
+
+  /*
+   * The plan.
+   *
+   * A plan_handle on the URL means the merchant has just come back from
+   * Shopify's pricing page, so that is claimed instead of read — claiming also
+   * returns the new status, so it is one call either way. The parameter is then
+   * dropped from the address bar: leaving it there would make a refresh look
+   * like a second plan change, and would make the URL something a merchant
+   * could paste to someone else.
+   */
+  var claimed = document.body.getAttribute('data-plan-handle');
+
+  if (claimed) {
+    claimPlanHandle(claimed).then(function () {
+      // Only after the claim has landed. Doing it first would lose the handle
+      // if the request failed and the merchant reloaded.
+      if (window.history && window.history.replaceState) {
+        var url = location.pathname + location.search.replace(/[?&]plan_handle=[^&]*/, '')
+          .replace(/^&/, '?') + location.hash;
+        window.history.replaceState(null, '', url);
+      }
+      // Reports may have just become available, and the figures they gate along
+      // with them.
+      statsData = null;
+      loadStats();
+    });
+  } else {
+    loadPlan();
+  }
 })();
 `;
 }

@@ -55,15 +55,24 @@ function sessionToken(overrides) {
   return header + '.' + payload + '.' + sig;
 }
 
-function proxyUrl(p) {
+function proxyUrlFor(shop, p) {
   return BASE + '/pwa/proxy' + p + (p.includes('?') ? '&' : '?') +
-    'shop=' + SHOP + '&path_prefix=%2Fapps%2Fpwa';
+    'shop=' + shop + '&path_prefix=%2Fapps%2Fpwa';
+}
+
+function proxyUrl(p) {
+  return proxyUrlFor(SHOP, p);
+}
+
+function adminFor(shop, p, options) {
+  const opts = options || {};
+  const token = sessionToken({ dest: 'https://' + shop, iss: 'https://' + shop + '/admin' });
+  opts.headers = Object.assign({ Authorization: 'Bearer ' + token }, opts.headers || {});
+  return fetch(BASE + p, opts);
 }
 
 function admin(p, options) {
-  const opts = options || {};
-  opts.headers = Object.assign({ Authorization: 'Bearer ' + sessionToken() }, opts.headers || {});
-  return fetch(BASE + p, opts);
+  return adminFor(SHOP, p, options);
 }
 
 const isPng = (buf) => buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
@@ -514,29 +523,11 @@ async function run() {
   await deviceEvent('dismissed', 'desktop');
   await deviceEvent('installed', 'martian');
 
-  const split = await (await admin('/api/stats')).json();
-  ok('iOS installs are counted separately', split.platformRecent.ios.installed === 1,
-    JSON.stringify(split.platformRecent.ios));
-  ok('Android installs are counted separately', split.platformRecent.android.installed === 1);
-  ok('dismissals are counted', split.recent.dismissed === 2, String(split.recent.dismissed));
-  ok('dismissals are split by device too',
-    split.platformRecent.ios.dismissed === 1 && split.platformRecent.desktop.dismissed === 1);
-  // An open key space on a public endpoint is the thing not to have. The
-  // device family arrives in a query string anyone can type, so "martian" must
-  // collapse into the existing bucket rather than become a fifth one.
-  ok('an unrecognised device family does not create a bucket',
-    Object.keys(split.platformRecent).sort().join(',') === 'android,desktop,ios,other',
-    Object.keys(split.platformRecent).join(','));
-  ok('the device split adds up to the total',
-    split.platformRecent.ios.installed + split.platformRecent.android.installed +
-    split.platformRecent.desktop.installed + split.platformRecent.other.installed ===
-    split.recent.installed, JSON.stringify(split.platformRecent));
-  ok('all-time totals are split by device as well', split.platformTotals.ios.installed === 1);
-  // Two earlier installs carried no device at all, and the third was the
-  // unrecognised one. Counters with no device to attribute them to stay in
-  // `other` — inventing one would be worse than admitting it.
-  ok('events with no device, and unrecognised ones, both land in other',
-    split.platformTotals.other.installed === 3, JSON.stringify(split.platformTotals.other));
+  const counted = await (await admin('/api/stats')).json();
+  ok('dismissals are counted', counted.recent.dismissed === 2, String(counted.recent.dismissed));
+  // The per-device breakdown is a paid feature, and this shop is still on the
+  // free plan, so it is withheld here by design. It is asserted in the plans
+  // section below, once the shop has been upgraded.
 
   // The ceiling is per shop, not per address: behind nginx every request comes
   // from 127.0.0.1, and behind Shopify's app proxy every legitimate storefront
@@ -707,16 +698,199 @@ async function run() {
 
   console.log('\n== reports and setup ==');
 
+  // Authentication is checked before the plan is, so these hold on any plan.
+  // What the paid plan buys is asserted in the plans section below, which is
+  // also where the report list itself is exercised — on a free shop these
+  // routes answer 402 by design.
   ok('reports need a session token', (await fetch(BASE + '/api/reports')).status === 401);
   ok('the setup check needs a session token', (await fetch(BASE + '/api/setup')).status === 401);
 
-  const emptyReports = await (await admin('/api/reports')).json();
-  ok('a store with no reports gets an empty list', Array.isArray(emptyReports.reports) &&
-    emptyReports.reports.length === 0);
-  ok('an unknown report id is 404',
-    (await admin('/api/reports/deadbeef')).status === 404);
+  console.log('\n== plans and entitlements ==');
+
+  ok('the plan needs a session token', (await fetch(BASE + '/api/plan')).status === 401);
+
+  let planStatus = await (await admin('/api/plan')).json();
+  ok('a new shop is on the free plan', planStatus.planId === 'free', planStatus.planId);
+  ok('the free plan carries a monthly install allowance',
+    planStatus.allowance.limited && planStatus.allowance.limit === 100,
+    JSON.stringify(planStatus.allowance));
+  ok('the free plan covers dashboard, settings and help',
+    planStatus.sections.join(',') === 'dashboard,settings,help', planStatus.sections.join(','));
+  ok('but not reports', planStatus.sections.indexOf('reports') === -1);
+  ok('all three plans are offered', planStatus.plans.length === 3,
+    planStatus.plans.map((p) => p.id).join(','));
+  ok('the paid plans are $5.99 monthly and $4.99 a month yearly',
+    planStatus.plans[1].priceLabel === '$5.99' && planStatus.plans[2].perMonthLabel === '$4.99 / month',
+    planStatus.plans.map((p) => p.priceLabel).join(' / '));
+  ok('the yearly plan states its real yearly total',
+    planStatus.plans[2].priceLabel === '$59.88', planStatus.plans[2].priceLabel);
+  ok('and the saving is worked out, not typed',
+    planStatus.plans[2].savingPercent === 17, String(planStatus.plans[2].savingPercent));
+  ok('the upgrade link points at Shopify\'s own plan page',
+    planStatus.upgradeUrl === 'https://admin.shopify.com/store/demo-store/charges/' +
+      'proecomtech-storefront-pwa/pricing_plans', planStatus.upgradeUrl);
+  // Without Partner credentials the app cannot re-check a plan with Shopify.
+  // It has to say so rather than implying the answer is authoritative.
+  ok('an unverified plan says so', planStatus.verified === false);
+
+  // Reports are the paid section, and the server — not the admin — is what
+  // enforces that. A gate the UI draws and the API does not is decorative.
+  for (const [label, path, options] of [
+    ['listing reports', '/api/reports', undefined],
+    ['reading a report', '/api/reports/abc', undefined],
+    ['generating a report', '/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
+    ['deleting a report', '/api/reports/abc', { method: 'DELETE' }],
+  ]) {
+    res = await admin(path, options);
+    ok('the free plan is refused ' + label, res.status === 402, 'got ' + res.status);
+  }
+
+  const refusal = await (await admin('/api/reports')).json();
+  ok('the refusal names the way out', Boolean(refusal.upgradeUrl) && refusal.section === 'reports',
+    JSON.stringify(refusal));
+
+  // The Home page is on every plan and reads this route, so it must answer —
+  // minus the device split, which is what the Analytics page buys.
+  const freeStats = await (await admin('/api/stats')).json();
+  ok('the free plan still gets its install totals', typeof freeStats.totals.installed === 'number');
+  ok('but not the device breakdown',
+    freeStats.platformsWithheld === true && !freeStats.platformRecent,
+    JSON.stringify(Object.keys(freeStats)));
+
+  // The setup wizard is Help & Support, which every plan includes.
+  ok('the quick setup wizard is not gated', (await admin('/api/setup')).status !== 402);
+
+  res = await admin('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planHandle: 'pro-annual' }),
+  });
+  planStatus = await res.json();
+  ok('a plan handle from Shopify\'s redirect is claimed', planStatus.planId === 'annual', planStatus.planId);
+  ok('the paid plan unlocks reports', planStatus.sections.indexOf('reports') !== -1);
+  ok('and removes the install cap', planStatus.allowance.limited === false,
+    JSON.stringify(planStatus.allowance));
+
+  res = await admin('/api/reports');
+  const emptyReports = await res.json();
+  ok('reports answer once the plan covers them', res.status === 200, 'got ' + res.status);
+  ok('a store with no reports gets an empty list',
+    Array.isArray(emptyReports.reports) && emptyReports.reports.length === 0);
+  ok('an unknown report id is 404', (await admin('/api/reports/deadbeef')).status === 404);
   ok('deleting an unknown report is 404',
     (await admin('/api/reports/deadbeef', { method: 'DELETE' })).status === 404);
+
+  // The device split, from the events recorded in the counters section above.
+  const split = await (await admin('/api/stats')).json();
+  ok('the device breakdown comes back on a paid plan', Boolean(split.platformRecent));
+  ok('iOS installs are counted separately', split.platformRecent.ios.installed === 1,
+    JSON.stringify(split.platformRecent.ios));
+  ok('Android installs are counted separately', split.platformRecent.android.installed === 1);
+  ok('dismissals are split by device too',
+    split.platformRecent.ios.dismissed === 1 && split.platformRecent.desktop.dismissed === 1);
+  // An open key space on a public endpoint is the thing not to have. The
+  // device family arrives in a query string anyone can type, so "martian" must
+  // collapse into the existing bucket rather than become a fifth one.
+  ok('an unrecognised device family does not create a bucket',
+    Object.keys(split.platformRecent).sort().join(',') === 'android,desktop,ios,other',
+    Object.keys(split.platformRecent).join(','));
+  ok('the device split adds up to the total',
+    split.platformRecent.ios.installed + split.platformRecent.android.installed +
+    split.platformRecent.desktop.installed + split.platformRecent.other.installed ===
+    split.recent.installed, JSON.stringify(split.platformRecent));
+  ok('all-time totals are split by device as well', split.platformTotals.ios.installed === 1);
+  // Two earlier installs carried no device at all, and the third was the
+  // unrecognised one. Counters with no device to attribute them to stay in
+  // `other` — inventing one would be worse than admitting it.
+  ok('events with no device, and unrecognised ones, both land in other',
+    split.platformTotals.other.installed === 3, JSON.stringify(split.platformTotals.other));
+
+  ok('a claim needs a session token',
+    (await fetch(BASE + '/api/plan', { method: 'POST' })).status === 401);
+  res = await admin('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planHandle: '../../etc/passwd' }),
+  });
+  ok('a plan handle that is not one is refused', res.status === 400, 'got ' + res.status);
+
+  // A handle we do not recognise, on a shop that is being charged for
+  // something. Falling back to Free would mean taking the money and locking
+  // the merchant out; the paid tier is the safe direction to fail.
+  await admin('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planHandle: 'some-legacy-plan' }),
+  });
+  ok('an unrecognised paid handle grants the paid tier rather than locking out',
+    (await (await admin('/api/plan')).json()).sections.indexOf('reports') !== -1);
+
+  console.log('\n== the free install cap ==');
+
+  /*
+   * Its own shop, for two reasons. The rate-limit ceiling is per shop and the
+   * flood earlier in this file has already spent the first shop's minute, so
+   * these installs would be dropped. And a plan is per shop — running this
+   * beside a shop that has just been moved to a paid plan is the cheapest proof
+   * that the two do not leak into each other.
+   */
+  const CAP_SHOP = 'cap-test.myshopify.com';
+  const capEvent = (type) => fetch(
+    proxyUrlFor(CAP_SHOP, '/event?type=' + type + '&p=android'), { method: 'POST' }
+  );
+
+  let cap = await (await adminFor(CAP_SHOP, '/api/plan')).json();
+  ok('a second shop starts on its own free plan', cap.planId === 'free' && cap.allowance.used === 0,
+    JSON.stringify(cap.allowance));
+  ok('and is unaffected by the first shop\'s upgrade',
+    (await (await admin('/api/plan')).json()).planId !== 'free');
+
+  const allowed = await (await fetch(proxyUrlFor(CAP_SHOP, '/pwa.js'))).text();
+  ok('an untouched free shop is told to offer the install card',
+    allowed.includes('"enabled":true'));
+
+  for (let i = 0; i < 40; i++) await capEvent('installed');
+  cap = await (await adminFor(CAP_SHOP, '/api/plan')).json();
+  ok('the allowance counts this month\'s installs',
+    cap.allowance.used === 40 && cap.allowance.remaining === 60, JSON.stringify(cap.allowance));
+  ok('and is not exhausted yet', cap.allowance.exhausted === false);
+
+  for (let i = 0; i < 65; i++) await capEvent('installed');
+  cap = await (await adminFor(CAP_SHOP, '/api/plan')).json();
+  ok('the free allowance reports itself exhausted past 100',
+    cap.allowance.exhausted === true, JSON.stringify(cap.allowance));
+  // Installs from the browser's own menu keep arriving and keep counting, so
+  // the figure is allowed to run past the ceiling rather than being clamped to
+  // it. A merchant reading "105 of 100" is reading the truth.
+  ok('and does not clamp the real number to the limit',
+    cap.allowance.used === 105, JSON.stringify(cap.allowance));
+
+  const cappedScript = await (await fetch(proxyUrlFor(CAP_SHOP, '/pwa.js'))).text();
+  ok('the storefront stops being told to offer the install card',
+    cappedScript.includes('"enabled":false'), 'install.enabled was not switched off');
+
+  // The cap limits the app, not the store. A manifest switched to display:
+  // browser would break the browser's own install menu and change how the app
+  // looks for everyone who installed before the cap was reached.
+  const cappedManifest = await (await fetch(proxyUrlFor(CAP_SHOP, '/manifest.json'))).json();
+  ok('but the store is still installable by any other route',
+    cappedManifest.display === 'standalone', cappedManifest.display);
+
+  const cappedHealth = await (await fetch(proxyUrlFor(CAP_SHOP, '/health'))).json();
+  ok('health says which plan and how much of the allowance is gone',
+    cappedHealth.plan === 'free' && cappedHealth.installCardOffered === false &&
+    /105 of 100 this month/.test(cappedHealth.installAllowance),
+    JSON.stringify(cappedHealth.installAllowance));
+
+  await adminFor(CAP_SHOP, '/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planHandle: 'pro-monthly' }),
+  });
+  const uncapped = await (await fetch(proxyUrlFor(CAP_SHOP, '/pwa.js'))).text();
+  ok('upgrading puts the install card back', uncapped.includes('"enabled":true'));
+  ok('and the allowance stops being a limit',
+    (await (await adminFor(CAP_SHOP, '/api/plan')).json()).allowance.limited === false);
 
   console.log('\n== the admin screen ==');
 
@@ -726,11 +900,20 @@ async function run() {
   ok('it is framed only by this shop and the Shopify admin',
     (res.headers.get('content-security-policy') || '').includes('frame-ancestors https://' + SHOP));
 
-  for (const route of ['home', 'configuration', 'install-message', 'cache-assets', 'offline-page',
-                       'settings', 'reports', 'analytics', 'setup', 'faqs']) {
+  const ROUTES = ['home', 'configuration', 'install-message', 'cache-assets', 'offline-page',
+                  'settings', 'reports', 'analytics', 'setup', 'faqs', 'plans'];
+  for (const route of ROUTES) {
     ok('the admin carries the ' + route + ' page', adminHtml.includes('data-page="' + route + '"'));
   }
-  ok('the sidebar links every page', adminHtml.split('data-route="').length - 1 === 10);
+  ok('the sidebar links every page',
+    adminHtml.split('data-route="').length - 1 === ROUTES.length,
+    String(adminHtml.split('data-route="').length - 1) + ' links for ' + ROUTES.length + ' pages');
+  // The padlock and the diversion to the plans page are drawn from these, so a
+  // page with no section would silently be ungateable.
+  ok('every sidebar link declares the plan section it needs',
+    adminHtml.split('data-section="').length - 1 === ROUTES.length);
+  ok('both report pages carry an upgrade panel for merchants on the free plan',
+    adminHtml.includes('id="reportsLocked"') && adminHtml.includes('id="analyticsLocked"'));
   // Duplicate ids would make getElementById return whichever page came first,
   // and the save bar is on five of them.
   const adminIds = (adminHtml.match(/ id="[^"]+"/g) || []).map((s) => s.slice(5, -1));
@@ -782,6 +965,17 @@ async function run() {
     afterUninstall.totals.installed === 0 && afterUninstall.lastEventAt === null,
     JSON.stringify(afterUninstall.totals));
   ok('the stats file is gone too', !fs.existsSync(path.join(DATA_DIR, 'stats', SHOP + '.json')));
+
+  // Shopify cancels the subscription on uninstall. Keeping the plan record
+  // would mean a merchant reinstalling next year arrived already entitled to a
+  // plan they had stopped paying for.
+  ok('the plan record is deleted on uninstall',
+    !fs.existsSync(path.join(DATA_DIR, 'plans', SHOP + '.json')));
+  ok('and a reinstalled shop is back on the free plan',
+    (await (await admin('/api/plan')).json()).planId === 'free');
+  // The other shop's data is untouched by this shop's uninstall.
+  ok('another shop keeps its plan',
+    (await (await adminFor('cap-test.myshopify.com', '/api/plan')).json()).planId === 'monthly');
 }
 
 const server = spawn(process.execPath, ['web/server.js'], {

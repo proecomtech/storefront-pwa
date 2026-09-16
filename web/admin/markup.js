@@ -143,14 +143,52 @@ const ICONS = {
   analytics: '<path d="M3 15l4-5 3 3 6-8"/><path d="M3 3v14h14"/>',
   wizard: '<path d="M10 2.5l1.8 4 4.2.5-3.1 2.9.9 4.3L10 12l-3.8 2.2.9-4.3L4 7l4.2-.5z"/>',
   faq: '<circle cx="10" cy="10" r="7.5"/><path d="M8 8a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.4"/><circle cx="10" cy="14" r=".7" fill="currentColor"/>',
+  plans: '<path d="M3 7.5h14M3 7.5l2-3h10l2 3M3 7.5v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M8 10.5a2 2 0 0 0 4 0"/>',
 };
 
-function navItem(route, icon, label) {
+/** The padlock beside a nav item the current plan does not cover. */
+const LOCK_ICON =
+  '<svg class="lock" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="4.5" y="9" width="11" height="7.5" rx="1.5"/>' +
+  '<path d="M7.2 9V6.8a2.8 2.8 0 0 1 5.6 0V9"/></svg>';
+
+/**
+ * A sidebar link.
+ *
+ * `section` names the plan section the page belongs to. The client adds the
+ * padlock and diverts the link to the plans page when the shop's plan does not
+ * cover it — done there rather than here because the plan is not known at
+ * render time: this HTML is a static string the server sends before it has read
+ * anything about the shop.
+ */
+function navItem(route, icon, label, section) {
   return (
-    '<a href="#/' + route + '" data-route="' + route + '">' +
+    '<a href="#/' + route + '" data-route="' + route + '"' +
+    (section ? ' data-section="' + section + '"' : '') + '>' +
     '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
     'stroke-linecap="round" stroke-linejoin="round">' + ICONS[icon] + '</svg>' +
-    '<span>' + escapeHtml(label) + '</span></a>'
+    '<span>' + escapeHtml(label) + '</span>' +
+    '<span class="navlock" data-navlock hidden>' + LOCK_ICON + '</span></a>'
+  );
+}
+
+/**
+ * The panel a locked page shows in place of its contents.
+ *
+ * Every Reports page carries one. It is not only for the nav — a merchant can
+ * reach `#/reports` from a bookmark, and a page that rendered its own empty
+ * shell there would look broken rather than locked.
+ */
+function upgradePanel(id, title, blurb) {
+  return (
+    '<section class="locked" id="' + id + '" hidden>' +
+    '<h2>' + escapeHtml(title) + '</h2>' +
+    '<p class="hint">' + blurb + '</p>' +
+    '<div class="row">' +
+    '<a class="btn" data-upgrade href="#/plans">See plans</a>' +
+    '<span class="muted">From $4.99 a month.</span>' +
+    '</div></section>'
   );
 }
 
@@ -166,4 +204,5 @@ module.exports = {
   select,
   text,
   toggleStrip,
+  upgradePanel,
 };

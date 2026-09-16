@@ -248,6 +248,30 @@ function flush() {
 }
 
 /**
+ * Installs counted so far in the current UTC calendar month.
+ *
+ * The free plan's allowance is measured here. A calendar month rather than a
+ * rolling thirty days, because a merchant reading "your free installs reset on
+ * the 1st" can plan around it, and nobody can plan around a window that slides.
+ * UTC for the same reason every other bucket in this file is UTC — see dayKey.
+ *
+ * Read on the storefront's /pwa.js route, so it walks the in-memory day map
+ * rather than touching the disk.
+ */
+function installsThisMonth(shop) {
+  if (!settingsStore.isValidShop(shop)) return 0;
+
+  const prefix = dayKey().slice(0, 7);
+  const days = load(shop).data.days;
+
+  let total = 0;
+  for (const [day, counts] of Object.entries(days)) {
+    if (day.startsWith(prefix)) total += counts.installed;
+  }
+  return total;
+}
+
+/**
  * The admin's view: all-time totals plus a dense daily series.
  *
  * The series carries a row for every day in the window, including the empty
@@ -339,6 +363,7 @@ module.exports = {
   RETAIN_DAYS,
   STATS_DIR,
   flush,
+  installsThisMonth,
   record,
   remove,
   start,

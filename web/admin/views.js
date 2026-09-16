@@ -15,11 +15,12 @@
 
 const {
   area, checkbox, colorField, counted, escapeHtml, field,
-  navItem, saveBar, select, text, toggleStrip,
+  navItem, saveBar, select, text, toggleStrip, upgradePanel,
 } = require('./markup.js');
 
 const { STYLES } = require('./styles.js');
 const { CATEGORIES, MAX_BENEFITS, BENEFIT_LENGTH, MAX_PRECACHE } = require('../validate.js');
+const { FREE_INSTALLS_PER_MONTH } = require('../plans.js');
 
 /* ------------------------------------------------------------------ pieces */
 
@@ -27,24 +28,27 @@ function sidebar() {
   return (
     '<aside class="nav" id="nav">' +
     '<div class="navcount"><span>Total installs</span><b id="navInstalls">—</b></div>' +
+    '<a class="navplan" href="#/plans" id="navPlan"><span id="navPlanName">…</span>' +
+    '<em id="navPlanAction"></em></a>' +
 
     '<p class="navgroup">Dashboard</p>' +
-    navItem('home', 'home', 'Home') +
+    navItem('home', 'home', 'Home', 'dashboard') +
 
     '<p class="navgroup">Settings</p>' +
-    navItem('configuration', 'config', 'Configuration') +
-    navItem('install-message', 'message', 'Install message') +
-    navItem('cache-assets', 'cache', 'Cache assets') +
-    navItem('offline-page', 'offline', 'Offline page') +
-    navItem('settings', 'settings', 'Settings') +
+    navItem('configuration', 'config', 'Configuration', 'settings') +
+    navItem('install-message', 'message', 'Install message', 'settings') +
+    navItem('cache-assets', 'cache', 'Cache assets', 'settings') +
+    navItem('offline-page', 'offline', 'Offline page', 'settings') +
+    navItem('settings', 'settings', 'Settings', 'settings') +
 
     '<p class="navgroup">Reports</p>' +
-    navItem('reports', 'report', 'PWA / Performance') +
-    navItem('analytics', 'analytics', 'Analytics') +
+    navItem('reports', 'report', 'PWA / Performance', 'reports') +
+    navItem('analytics', 'analytics', 'Analytics', 'reports') +
 
     '<p class="navgroup">Help &amp; support</p>' +
-    navItem('setup', 'wizard', 'Quick setup wizard') +
-    navItem('faqs', 'faq', 'FAQs') +
+    navItem('setup', 'wizard', 'Quick setup wizard', 'help') +
+    navItem('faqs', 'faq', 'FAQs', 'help') +
+    navItem('plans', 'plans', 'Plans', 'help') +
 
     '<div class="spacer"></div>' +
     '<div class="navfoot" id="navFoot"></div>' +
@@ -83,6 +87,18 @@ function tabs(group, items) {
 function homePage() {
   return page('home', 'Home', 'Everything the app is doing for this store, at a glance.',
     '<div id="homeBanners"></div>' +
+
+    // Only rendered on a plan with a cap. An unlimited plan showing a meter
+    // that can never fill is a question a merchant does not need to ask.
+    '<section id="allowanceCard" hidden>' +
+    '<div class="between" style="margin-bottom:10px">' +
+    '<div><h2 style="margin:0">Free plan installs</h2>' +
+    '<p class="hint" style="margin:2px 0 0" id="allowanceNote"></p></div>' +
+    '<a class="btn small" data-upgrade href="#/plans">Upgrade</a>' +
+    '</div>' +
+    '<div class="meter"><i id="allowanceBar"></i></div>' +
+    '<p class="axis"><span id="allowanceUsed"></span><span id="allowanceResets"></span></p>' +
+    '</section>' +
 
     '<section>' +
     '<div class="between" style="margin-bottom:12px">' +
@@ -490,6 +506,13 @@ function reportsPage() {
     'Page speed measured by Google PageSpeed Insights, and installability measured by this app ' +
     'against your live storefront.',
 
+    upgradePanel('reportsLocked', 'Reports are on the paid plans',
+      'Run a PageSpeed measurement against your live storefront and score it against thirteen ' +
+      'installability checks, with a history of every run. Everything else in the app stays exactly ' +
+      'as it is on the free plan.') +
+
+    '<div id="reportsBody">' +
+
     '<section>' +
     '<div class="between">' +
     '<div class="row">' +
@@ -508,7 +531,8 @@ function reportsPage() {
     '<div id="reportList"></div>' +
     '</section>' +
 
-    '<section id="reportDetail" hidden></section>'
+    '<section id="reportDetail" hidden></section>' +
+    '</div>'
   );
 }
 
@@ -527,6 +551,13 @@ function analyticsPage() {
   return page('analytics', 'Analytics',
     'Installs and dismissals, split by device. Counted on your storefront — nothing about the ' +
     'customer is recorded.',
+
+    upgradePanel('analyticsLocked', 'Analytics is on the paid plans',
+      'Installs and dismissals split by iOS, Android and desktop, the full funnel from card shown to ' +
+      'app reopened, and a daily chart over up to six months. Your storefront keeps counting on the ' +
+      'free plan — the totals are on the Home page, and nothing is lost while you decide.') +
+
+    '<div id="analyticsBody">' +
 
     '<section>' +
     '<h2>App installed</h2>' +
@@ -551,7 +582,8 @@ function analyticsPage() {
     '<p class="hint">Every step from "the card appeared" to "the app was opened again".</p>' +
     '<div class="stats" id="funnelTiles"></div>' +
     '<p class="hint" id="statNote" style="margin:14px 0 0"></p>' +
-    '</section>',
+    '</section>' +
+    '</div>',
 
     rangePicker
   );
@@ -567,6 +599,64 @@ function setupPage() {
     '</div>' +
     '</section>' +
     '<div id="setupResult"></div>'
+  );
+}
+
+function plansPage() {
+  return page('plans', 'Plans',
+    'Billing is handled by Shopify. Choosing a plan opens Shopify’s own checkout — this app never ' +
+    'sees a card, and cancelling is one click in the same place.',
+
+    '<div id="planCards" class="plancards"></div>' +
+
+    '<section>' +
+    '<h2>What the free plan covers</h2>' +
+    '<p class="hint">Everything that makes your store installable, with one limit.</p>' +
+    '<table class="what2">' +
+    '<tr><td>The PWA itself</td><td>The manifest, the icons, the iOS launch screens, the offline page ' +
+    'and the service worker. A store on the free plan is as installable as one on a paid plan.</td></tr>' +
+    '<tr><td>Configuration</td><td>Every setting: name, logo, colours, install message, cache rules, ' +
+    'shortcuts, screenshots. Nothing in the Settings section is withheld.</td></tr>' +
+    '<tr><td>Help &amp; support</td><td>The quick setup wizard, which checks your live storefront, and ' +
+    'the FAQs.</td></tr>' +
+    '<tr><td>Install counts</td><td>Your totals and the daily chart on the Home page. The counters ' +
+    'keep running whatever plan you are on, so upgrading later shows you the history you already had.</td></tr>' +
+    '<tr><td>The limit</td><td><strong>' + FREE_INSTALLS_PER_MONTH + ' installs a month.</strong> ' +
+    'Past that the app stops showing its install card until the 1st. Customers can still install from ' +
+    'their browser’s own menu, and apps already installed keep working.</td></tr>' +
+    '</table>' +
+    '</section>' +
+
+    '<section>' +
+    '<h2>What a paid plan adds</h2>' +
+    '<p class="hint">One section, and the cap comes off.</p>' +
+    '<table class="what2">' +
+    '<tr><td>Unlimited installs</td><td>No monthly ceiling, so the install card never stops being ' +
+    'offered.</td></tr>' +
+    '<tr><td>PWA / Performance reports</td><td>PageSpeed runs against your live storefront, scored ' +
+    'alongside thirteen installability checks, with a history of the last twenty.</td></tr>' +
+    '<tr><td>Analytics</td><td>Installs and dismissals split by iOS, Android and desktop, and the ' +
+    'whole funnel from card shown to app reopened.</td></tr>' +
+    '</table>' +
+    '</section>' +
+
+    '<section>' +
+    '<h2>Billing questions</h2>' +
+    '<details><summary>How do I cancel?</summary><p>In Shopify admin under Settings &rsaquo; Apps and ' +
+    'sales channels, or from the same plan page the buttons above open. You keep the paid features ' +
+    'until the end of the period you have paid for, then the app returns to the free plan with every ' +
+    'setting intact.</p></details>' +
+    '<details><summary>What happens to my settings if I downgrade?</summary><p>Nothing is deleted. ' +
+    'The Reports section is hidden and the monthly install cap applies again; your configuration, ' +
+    'your counters and your stored reports all stay where they are.</p></details>' +
+    '<details><summary>Is the yearly plan really cheaper?</summary><p>Yes — $59.88 once instead of ' +
+    '$5.99 twelve times, which is two months. It is the same app either way.</p></details>' +
+    '<details><summary>What counts as an install?</summary><p>A browser that added your store to a ' +
+    'home screen or a desktop, counted once per browser. On iOS it is counted the first time the ' +
+    'installed app is opened, because Safari gives no signal at the moment it is added.</p></details>' +
+    '</section>' +
+
+    '<p class="hint" id="planSource"></p>'
   );
 }
 
@@ -629,7 +719,7 @@ function faqsPage() {
 
 /* ------------------------------------------------------------------- shell */
 
-function html(shop, apiKey) {
+function html(shop, apiKey, planHandle) {
   const storeHandle = shop ? shop.replace(/\.myshopify\.com$/, '') : null;
 
   // Both are absolute URLs to admin.shopify.com and the storefront, built here
@@ -650,7 +740,7 @@ ${apiKey ? '<meta name="shopify-api-key" content="' + escapeHtml(apiKey) + '">' 
 ${shop && apiKey ? '<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>' : ''}
 <style>${STYLES}</style>
 </head>
-<body data-shop="${escapeHtml(shop || '')}" data-theme-editor="${themeEditorLink}" data-check="${checkLink}">
+<body data-shop="${escapeHtml(shop || '')}" data-theme-editor="${themeEditorLink}" data-check="${checkLink}" data-plan-handle="${escapeHtml(planHandle || '')}">
 <div class="shell" id="shell">
   ${sidebar()}
   <button type="button" class="navtoggle" id="navToggle" aria-label="Collapse the menu">&#8249;</button>
@@ -668,6 +758,7 @@ ${shop && apiKey ? '<script src="https://cdn.shopify.com/shopifycloud/app-bridge
     ${analyticsPage()}
     ${setupPage()}
     ${faqsPage()}
+    ${plansPage()}
   </div>
 </div>
 <script src="/admin.js"></script>

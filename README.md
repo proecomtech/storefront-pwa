@@ -113,6 +113,8 @@ web/
   auth.js                         session tokens, proxy signature, webhook HMAC
   pages.js                        offline page + storefront self-test
   reports.js                      PageSpeed runs + installability checks, per shop
+  plans.js                        the three plans and what each one buys
+  billing.js                      which plan each shop is on, and how that is learned
   admin-page.js                   the seam server.js talks to
   admin/                          the embedded admin (no build step)
     styles.js                     stylesheet
@@ -156,6 +158,9 @@ shopify app deploy            # uploads the theme app embed
 | `DATA_DIR` | yes in production | Where settings and images are written. Must survive a redeploy. |
 | `PORT` | no | Defaults to 3007. |
 | `PWA_PROXY_BASE` | no | The proxy subpath, for the admin's report and setup checks only. Defaults to `/apps/pwa`. Storefront requests carry it themselves; the admin runs in an iframe with no way to ask, so it has to be told if you changed it. |
+| `PWA_APP_HANDLE` | no | The app handle in the Shopify App Pricing URL. Must match `handle` in `shopify.app.toml` or the Upgrade buttons 404. |
+| `PWA_PLAN_HANDLE_FREE`<br>`PWA_PLAN_HANDLE_MONTHLY`<br>`PWA_PLAN_HANDLE_ANNUAL` | no | The plan handles as typed in the Partner dashboard. See [Billing](#billing). |
+| `SHOPIFY_PARTNER_ORG_ID`<br>`SHOPIFY_PARTNER_API_TOKEN`<br>`SHOPIFY_PARTNER_APP_ID` | no | Enable plan reconciliation. Without them the app cannot see a cancellation made outside itself — see [Billing](#billing). |
 | `PAGESPEED_API_KEY` | no | A Google PageSpeed Insights key for the Reports page. Without one the app uses Google's unauthenticated quota. |
 | `PWA_VERIFY_PROXY` | no | `true` enforces Shopify's proxy signature. **Default off** — see below. |
 
@@ -193,6 +198,7 @@ The admin is ten pages behind a sidebar:
 | **Analytics** | Installs and dismissals split by iOS / Android / desktop, a daily chart, and the full funnel. |
 | **Quick setup wizard** | The installability checks, run against the live storefront, each failing one saying what to do. |
 | **FAQs** | The questions this app actually gets asked. |
+| **Plans** | The three plans, what each covers, and a link to Shopify's own checkout. See [Billing](#billing). |
 
 Every page saves the whole settings object, so it does not matter which Save
 button you press or where you were standing when you edited something. The four
@@ -284,6 +290,88 @@ chrome affordance from customers who already installed:
 `canPrompt` and the service worker's real scope.
 
 ---
+
+## Billing
+
+Three plans. Billing itself is **Shopify App Pricing** (formerly Managed
+Pricing): the plans are defined in the Partner dashboard, Shopify hosts the
+checkout, and this app creates no charges, sees no card and — the part that made
+it the right choice here — **needs no Admin API scopes**. That is what lets an
+app with no OAuth flow and no stored access token charge money at all.
+
+| | Free | Pro | Pro, yearly |
+|---|---|---|---|
+| Price | $0 | **$5.99** / month | **$4.99** / month, billed yearly at $59.88 |
+| Installs | 100 a month | Unlimited | Unlimited |
+| Dashboard | ✓ | ✓ | ✓ |
+| Settings | ✓ | ✓ | ✓ |
+| Help & support | ✓ | ✓ | ✓ |
+| Reports | — | ✓ | ✓ |
+
+The free plan is a working PWA, not a trial. Every setting, the manifest, the
+icons, the iOS launch screens, the offline page, the service worker and the
+quick setup wizard are all on it. What a paid plan adds is the Reports section —
+PageSpeed runs and the per-device analytics — and the removal of the install
+cap.
+
+### The install cap
+
+The free plan covers 100 installs in a UTC calendar month. Past that the app
+**stops offering its own install card** until the 1st.
+
+It does not make the manifest uninstallable, and that is deliberate. Switching
+`display` to `browser` would break Chrome's own install button for a customer
+who never saw the card, and — worse — would change how the app behaves for
+everyone who had already installed it. The cap limits the app, not the store.
+
+Two consequences worth knowing. Installs from the browser's own menu still
+arrive and still count, so the figure can read `104 of 100`; it is not clamped,
+because the clamped number would be a lie. And `pwa.js` is cached for ten
+minutes, so the cut-off reaches visitors within ten minutes of the hundredth
+install rather than at it — the alternative is serving an uncached script to
+every visitor of every shop for the sake of a counter.
+
+### How the app knows which plan a shop is on
+
+Shopify App Pricing sends **no webhooks** for subscription changes;
+`APP_SUBSCRIPTIONS_UPDATE` was deprecated in April 2026. Two signals are left,
+and `web/billing.js` uses both:
+
+1. **The redirect.** Shopify returns the merchant to the app with
+   `?plan_handle=…` after they subscribe. The admin posts that to `POST
+   /api/plan` **behind a session token**, so the shop comes from the token's
+   `dest` claim and one merchant can never claim a plan for another's shop.
+   This covers every change made through the app.
+2. **The Partner API.** `activeSubscription(appId, shopId)` is the only way to
+   see a change made *outside* the app — a cancellation from Settings › Apps and
+   sales channels, a freeze for non-payment. It needs Partner org credentials,
+   so it is optional and off until `SHOPIFY_PARTNER_*` are set. When on, it runs
+   at most once an hour per shop, on the admin's own `/api/plan` call.
+
+**With reconciliation off, the recorded plan stands.** That is a stated
+trade-off, not an oversight: signal 1 is merchant-authenticated but is not
+cryptographically bound to a real subscription, so a merchant determined enough
+to edit a URL could claim a plan they never paid for. The admin says which state
+a shop is in — "Confirmed with Shopify" or "not configured to re-check it" — on
+the Plans page rather than implying an authority it does not have. Set the
+Partner credentials and the record corrects itself within the hour.
+
+Two failure directions are chosen deliberately, both in `web/plans.js`:
+
+- An **unrecognised plan handle on an active subscription** resolves to the paid
+  tier, never to Free. A handle typo in the Partner dashboard should cost a
+  little revenue, not lock a paying merchant out of what they bought.
+- A **Partner API failure** leaves the recorded plan alone. An outage must not
+  downgrade every paying merchant at once.
+
+### Where it is enforced
+
+In the server, not the admin. `requireSection('reports')` guards all four
+`/api/reports` routes and answers **402** with the upgrade URL; `/api/stats`
+withholds the per-device breakdown on Free while still returning the totals the
+Home page needs on every plan. The sidebar padlocks and the upgrade panels are
+there so a merchant sees the boundary before they click it — they are not the
+boundary.
 
 ## Install figures
 

@@ -31,6 +31,8 @@ const validate = require('./validate.js');
 const auth = require('./auth.js');
 const pages = require('./pages.js');
 const reports = require('./reports.js');
+const billing = require('./billing.js');
+const plans = require('./plans.js');
 const adminPage = require('./admin-page.js');
 
 const PORT = parseInt(process.env.PORT || '3007', 10);
@@ -244,6 +246,26 @@ proxy.get('/pwa.js', (req, res) => {
   const s = req.settings;
   const rev = images.renderRev(s);
 
+  /*
+   * The free plan's monthly install allowance, applied here and nowhere else.
+   *
+   * Once it is used up the app stops offering its own install card. It does NOT
+   * make the manifest uninstallable: a customer who finds Chrome's own install
+   * button should still be able to use it, and switching the manifest to
+   * `display: browser` mid-month would also change how the app behaves for
+   * everyone who installed it before the cap was reached. The app limits
+   * itself, not the storefront.
+   *
+   * This file is cached for ten minutes, so the cut-off reaches visitors within
+   * ten minutes of the hundredth install rather than at it. That is the right
+   * trade: the alternative is serving the storefront script uncached to every
+   * visitor of every shop for the sake of a counter.
+   */
+  const allowance = plans.allowanceFor(
+    billing.read(req.shop).planId,
+    stats.installsThisMonth(req.shop)
+  );
+
   // Switched off in the admin. The theme app embed still requests this file, so
   // answer with something valid and inert rather than a 404 in every console.
   if (!s.enabled) {
@@ -270,7 +292,11 @@ proxy.get('/pwa.js', (req, res) => {
     // Blank means "follow the theme colour", and working that out needs the
     // luminance check below — which is worth doing once per request on a server
     // instead of on every page view in every visitor's browser.
-    install: { ...s.install, ...installButtonColors(s) },
+    install: {
+      ...s.install,
+      ...installButtonColors(s),
+      enabled: s.install.enabled && !allowance.exhausted,
+    },
     sw: { enabled: s.serviceWorker.enabled, url: req.proxyBase + '/sw.js' },
     eventUrl: req.proxyBase + '/event',
     origin: '',
@@ -441,12 +467,25 @@ proxy.post('/event', (req, res) => {
 
 proxy.get('/health', (req, res) => {
   const s = req.settings;
+  const allowance = plans.allowanceFor(
+    billing.read(req.shop).planId,
+    stats.installsThisMonth(req.shop)
+  );
+
   res.set('Cache-Control', 'no-store');
   res.type('application/json').send(JSON.stringify({
     ok: true,
     shop: req.shop,
     proxyBase: req.proxyBase,
     enabled: s.enabled,
+    plan: billing.read(req.shop).planId,
+    // The one figure worth having in a health check: an install card that has
+    // stopped appearing is the commonest "the app broke" report, and the
+    // commonest cause is a free plan that has used its month.
+    installAllowance: allowance.limited
+      ? allowance.used + ' of ' + allowance.limit + ' this month'
+      : 'unlimited',
+    installCardOffered: s.install.enabled && !allowance.exhausted,
     configured: Boolean(s.updatedAt),
     iconUploaded: s.assets.icon.present,
     manifest: req.proxyBase + '/manifest.json',
@@ -473,7 +512,11 @@ app.post('/webhooks/app/uninstalled', express.raw({ type: 'application/json', li
     settingsStore.remove(shop);
     stats.remove(shop);
     reports.removeShop(shop);
-    console.log('uninstalled: removed settings, assets, install counts and reports for ' + shop);
+    // The plan record goes too. Shopify cancels the subscription on uninstall,
+    // so keeping it would mean a merchant who reinstalled next year arrived
+    // already entitled to a plan they had stopped paying for.
+    billing.remove(shop);
+    console.log('uninstalled: removed settings, assets, install counts, reports and plan for ' + shop);
   }
 
   // Always 200 once the HMAC is good. A non-2xx makes Shopify retry, and a
@@ -495,11 +538,30 @@ app.get('/api/settings', auth.requireSession, async (req, res, next) => {
   }
 });
 
-/** Install counts for the shop in the session token. Read-only — the counters
- *  are only ever written from the storefront. */
+/**
+ * Install counts for the shop in the session token. Read-only — the counters
+ *  are only ever written from the storefront.
+ *
+ * Open to every plan, because the Home page is on every plan and its tiles and
+ * chart come from here. What the free plan does not get is the per-device
+ * breakdown: that is the Analytics page, that page is in the Reports section,
+ * and a gate the admin draws but the API does not enforce is not a gate. The
+ * response says which fields were withheld and why, so the admin can offer the
+ * upgrade rather than rendering four empty tiles.
+ */
 app.get('/api/stats', auth.requireSession, (req, res) => {
+  const summary = stats.summary(req.shop, req.query.days);
   res.set('Cache-Control', 'no-store');
-  res.json(stats.summary(req.shop, req.query.days));
+
+  if (billing.can(req.shop, 'reports')) return res.json(summary);
+
+  const { platformRecent, platformTotals, ...open } = summary;
+  return res.json({
+    ...open,
+    platformsWithheld: true,
+    planId: billing.read(req.shop).planId,
+    upgradeUrl: billing.pricingUrl(req.shop),
+  });
 });
 
 app.post('/api/settings', auth.requireSession, (req, res) => {
@@ -650,6 +712,81 @@ app.delete('/api/assets/:kind', auth.requireSession, (req, res, next) => {
     .catch(next);
 });
 
+/* ------------------------------------------------------------------ plans */
+
+/**
+ * Refuse a request the shop's plan does not cover.
+ *
+ * Used as middleware so the gate is one line at the top of each route rather
+ * than a condition inside it — a paid feature that is enforced in some of its
+ * routes and not others is not enforced.
+ *
+ * 402 rather than 403: the request is well-formed and the merchant is who they
+ * say they are; what is missing is a subscription. The body carries the upgrade
+ * URL so the admin can offer the way out rather than only the refusal.
+ */
+function requireSection(section) {
+  return (req, res, next) => {
+    if (billing.can(req.shop, section)) return next();
+
+    res.set('Cache-Control', 'no-store');
+    return res.status(402).json({
+      error: 'Your plan does not include this. Upgrade to see reports and analytics.',
+      section,
+      planId: billing.read(req.shop).planId,
+      upgradeUrl: billing.pricingUrl(req.shop),
+    });
+  };
+}
+
+/**
+ * The shop's plan, its allowance, and the plan table the admin renders.
+ *
+ * Reconciliation runs here rather than on a timer: this route is hit on every
+ * admin load, which is exactly when the answer needs to be current, and it is
+ * rate-limited by its own hour-long TTL. It is awaited because a merchant who
+ * has just cancelled should not be shown the paid plan one last time.
+ */
+app.get('/api/plan', auth.requireSession, async (req, res, next) => {
+  try {
+    await billing.reconcile(req.shop);
+    res.set('Cache-Control', 'no-store');
+    res.json(billing.statusFor(req.shop, stats.installsThisMonth(req.shop)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Claim the plan handle Shopify appended when it sent the merchant back from
+ * its pricing page.
+ *
+ * The shop comes from the session token, never from the body, so this can only
+ * ever move the caller's own shop. Where Partner credentials are configured the
+ * claim is then checked against Shopify and corrected if it disagrees — which
+ * is what makes this a hint rather than a licence. See web/billing.js.
+ */
+app.post('/api/plan', auth.requireSession, async (req, res, next) => {
+  const handle = String((req.body && req.body.planHandle) || '').trim();
+
+  if (!handle || handle.length > 80 || !/^[a-z0-9][a-z0-9_-]*$/i.test(handle)) {
+    return res.status(400).json({ error: 'That is not a plan handle.' });
+  }
+
+  try {
+    billing.claimHandle(req.shop, handle);
+    // force: the merchant has just come back from Shopify's pricing page, so
+    // the hour-long TTL is exactly wrong here — this is the moment the Partner
+    // API has something new to say.
+    await billing.reconcile(req.shop, { force: true });
+
+    res.set('Cache-Control', 'no-store');
+    return res.json(billing.statusFor(req.shop, stats.installsThisMonth(req.shop)));
+  } catch (err) {
+    return next(err);
+  }
+});
+
 /* -------------------------------------------------------- reports & setup */
 
 /**
@@ -681,19 +818,19 @@ app.get('/api/setup', auth.requireSession, async (req, res, next) => {
   }
 });
 
-app.get('/api/reports', auth.requireSession, (req, res) => {
+app.get('/api/reports', auth.requireSession, requireSection('reports'), (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({ reports: reports.list(req.shop), max: reports.MAX_REPORTS });
 });
 
-app.get('/api/reports/:id', auth.requireSession, (req, res) => {
+app.get('/api/reports/:id', auth.requireSession, requireSection('reports'), (req, res) => {
   const report = reports.read(req.shop, String(req.params.id));
   res.set('Cache-Control', 'no-store');
   if (!report) return res.status(404).json({ error: 'No such report.' });
   return res.json({ report });
 });
 
-app.post('/api/reports', auth.requireSession, async (req, res) => {
+app.post('/api/reports', auth.requireSession, requireSection('reports'), async (req, res) => {
   try {
     const settings = settingsStore.read(req.shop);
     const report = await reports.generate(
@@ -711,7 +848,7 @@ app.post('/api/reports', auth.requireSession, async (req, res) => {
   }
 });
 
-app.delete('/api/reports/:id', auth.requireSession, (req, res) => {
+app.delete('/api/reports/:id', auth.requireSession, requireSection('reports'), (req, res) => {
   const removed = reports.remove(req.shop, String(req.params.id));
   res.set('Cache-Control', 'no-store');
   if (!removed) return res.status(404).json({ error: 'No such report.' });
@@ -749,7 +886,18 @@ app.get('/', (req, res) => {
     'Cache-Control': 'no-store',
   });
 
-  res.send(adminPage.html(shop, auth.API_KEY));
+  /*
+   * `plan_handle` is what Shopify appends when it sends a merchant back from
+   * its pricing page after they subscribe. It is passed into the document and
+   * no further: the admin posts it to /api/plan with a session token, so the
+   * claim is made by an authenticated merchant for their own shop rather than
+   * by whoever loaded this URL. Validated here because it is about to be
+   * written into an HTML attribute.
+   */
+  const rawHandle = String(req.query.plan_handle || '');
+  const planHandle = /^[a-z0-9][a-z0-9_-]{0,79}$/i.test(rawHandle) ? rawHandle : '';
+
+  res.send(adminPage.html(shop, auth.API_KEY, planHandle));
 });
 
 app.use((err, req, res, _next) => {

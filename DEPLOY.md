@@ -581,16 +581,42 @@ in the workspace.
 | `PORT` | no | Defaults to 3007; must match the nginx `proxy_pass` |
 | `PWA_PROXY_BASE` | no | Defaults to `/apps/pwa`. Only the admin's Reports and Quick setup wizard read it — storefront requests carry the subpath themselves. Set it if you changed the proxy subpath in the Partner dashboard, or those two pages report a missing manifest on a store that is working fine |
 | `PAGESPEED_API_KEY` | no | Without one the Reports page uses Google's unauthenticated PageSpeed quota. Occasional runs are fine; a busy fleet will start seeing the run fail with a quota message, and the report is still stored with the installability half filled in |
+| `PWA_APP_HANDLE` | no | Defaults to `proecomtech-storefront-pwa`. Must match `handle` in `shopify.app.toml`, or every Upgrade button in the admin opens a Shopify 404 |
+| `PWA_PLAN_HANDLE_FREE`<br>`PWA_PLAN_HANDLE_MONTHLY`<br>`PWA_PLAN_HANDLE_ANNUAL` | no | The plan handles as typed in the Partner dashboard. A mismatch puts paying merchants on an unrecognised handle, which resolves to the paid tier — so the symptom is free reports, not a locked-out customer |
+| `SHOPIFY_PARTNER_ORG_ID`<br>`SHOPIFY_PARTNER_API_TOKEN`<br>`SHOPIFY_PARTNER_APP_ID` | no | All three, or none. Without them the app cannot re-check a plan with Shopify: a cancellation made outside the app is never seen, and the Plans page says so rather than implying otherwise |
 | `PWA_VERIFY_PROXY` | no | See below |
 
 **systemd env files are not shell scripts.** `KEY=value`, no `export`, no
 quotes. A stray quote becomes part of the value and then fails exactly as though
 the secret were wrong.
 
+### Before the first paid install: define the plans
+
+Billing is Shopify App Pricing, so the three plans live in the **Partner
+dashboard**, not in this repo. Create them under the app's Pricing section with
+handles matching `PWA_PLAN_HANDLE_*` — `free`, `pro-monthly` and `pro-annual`
+unless you override them — at $0, $5.99/month and $59.88/year.
+
+Two things to check after the first real subscription:
+
+1. The Upgrade buttons open
+   `https://admin.shopify.com/store/<store>/charges/<app handle>/pricing_plans`.
+   A 404 there means `PWA_APP_HANDLE` does not match `handle` in
+   `shopify.app.toml`.
+2. The admin's Plans page reports the right plan after Shopify redirects back.
+   If it says "Free" for a shop that just paid, the plan handle in the Partner
+   dashboard does not match the env var.
+
+Set `SHOPIFY_PARTNER_*` as soon as you have a Partner API client. Until you do,
+the app cannot see a cancellation made from a merchant's Apps and sales channels
+settings — the recorded plan stands. See "Billing" in the README for why that
+trade-off is the shape it is.
+
 ### The Reports page needs outbound HTTPS
 
-This is the only part of the app that makes an outbound call, and it does so only
-when a merchant presses a button. A report run reaches
+Reports and, when configured, plan reconciliation are the only parts of the app
+that make outbound calls. Reconciliation reaches `partners.shopify.com` at most
+once an hour per shop. A report run reaches
 `www.googleapis.com` for PageSpeed, and the shop's own storefront twice — once
 for `/apps/pwa/manifest.json` and once for the home page, to see whether the
 theme app embed is actually on. The Quick setup wizard makes the second pair and
