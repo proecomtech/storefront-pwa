@@ -579,11 +579,26 @@ in the workspace.
 | `SHOPIFY_API_SECRET` | yes | Session tokens cannot be verified — the admin loads but every save is rejected, and the uninstall webhook is ignored, so merchant logos are never deleted |
 | `DATA_DIR` | yes | Defaults to `<app>/data`, which is inside the read-only `/opt` — settings vanish on the first redeploy |
 | `PORT` | no | Defaults to 3007; must match the nginx `proxy_pass` |
+| `PWA_PROXY_BASE` | no | Defaults to `/apps/pwa`. Only the admin's Reports and Quick setup wizard read it — storefront requests carry the subpath themselves. Set it if you changed the proxy subpath in the Partner dashboard, or those two pages report a missing manifest on a store that is working fine |
+| `PAGESPEED_API_KEY` | no | Without one the Reports page uses Google's unauthenticated PageSpeed quota. Occasional runs are fine; a busy fleet will start seeing the run fail with a quota message, and the report is still stored with the installability half filled in |
 | `PWA_VERIFY_PROXY` | no | See below |
 
 **systemd env files are not shell scripts.** `KEY=value`, no `export`, no
 quotes. A stray quote becomes part of the value and then fails exactly as though
 the secret were wrong.
+
+### The Reports page needs outbound HTTPS
+
+This is the only part of the app that makes an outbound call, and it does so only
+when a merchant presses a button. A report run reaches
+`www.googleapis.com` for PageSpeed, and the shop's own storefront twice — once
+for `/apps/pwa/manifest.json` and once for the home page, to see whether the
+theme app embed is actually on. The Quick setup wizard makes the second pair and
+not the first.
+
+`ufw` as configured above filters inbound only, so nothing here needs a rule. On
+a host with egress filtering, a blocked call is not silent: the run is stored
+with the reason recorded against it and the installability half still filled in.
 
 ### Leave `PWA_VERIFY_PROXY=false` for the first deploy
 

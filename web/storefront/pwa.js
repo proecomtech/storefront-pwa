@@ -25,6 +25,7 @@
   var LAUNCH_KEY = 'shopify-pwa:counted-launch-on';
   var SEEN_KEY = 'shopify-pwa:counted-shown';
   var CLICKED_KEY = 'shopify-pwa:counted-clicked';
+  var DISMISSED_KEY = 'shopify-pwa:counted-dismissed';
 
   var deferredPrompt = null;
   var uiRoot = null;
@@ -105,7 +106,8 @@
     if (!CFG.eventUrl || isAutomated()) return;
     try {
       var url = CFG.eventUrl + (CFG.eventUrl.indexOf('?') === -1 ? '?' : '&') +
-                'type=' + encodeURIComponent(type);
+                'type=' + encodeURIComponent(type) +
+                '&p=' + encodeURIComponent(deviceFamily());
       if (navigator.sendBeacon && navigator.sendBeacon(url)) return;
       // Falls back to keepalive for the browsers that have fetch but refuse a
       // beacon, and to nothing at all for the ones that have neither. A missed
@@ -272,6 +274,22 @@
     return INSTRUCTIONS[p] || [];
   }
 
+  /*
+   * The three buckets the admin's analytics splits by.
+   *
+   * Derived from platform() rather than from a second look at the user agent,
+   * so the family a customer is counted in is always the same one whose install
+   * directions they were shown. Anything platform() could not place is sent as
+   * "other" and the server keeps it there — see stats.platformKey.
+   */
+  function deviceFamily() {
+    var p = platform();
+    if (p.indexOf('ios') === 0) return 'ios';
+    if (p.indexOf('android') === 0) return 'android';
+    if (p.indexOf('desktop') === 0) return 'desktop';
+    return 'other';
+  }
+
   /* Firefox on the desktop has no install support at all, and neither does an
    * unrecognised browser. Saying so is only worth doing when someone has just
    * clicked an Install button and is waiting for something to happen. */
@@ -371,9 +389,20 @@
     return isFinite(value) ? value : 0;
   }
 
+  /*
+   * "Stop asking." Reached from "Not now", from "Got it" on the directions
+   * card, and from a native install dialog the visitor declined.
+   *
+   * Counted once per visit, like `shown` and `clicked`, so it can be read
+   * against them: a card shown a hundred times and dismissed ninety is a
+   * different problem from one shown a hundred times and ignored. The corner ×
+   * deliberately does not come through here — see buildCard for why that one
+   * means "not on this screen" rather than "no".
+   */
   function dismiss() {
     var days = CFG.install.dismissDays;
     if (days > 0) store(DISMISS_KEY, String(Date.now() + days * 86400000));
+    if (markSession(DISMISSED_KEY)) send('dismissed');
     hideCard();
   }
 
@@ -424,8 +453,18 @@
       '.btn {',
       '  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;',
       '  padding: 7px 14px; border-radius: 8px; border: 0;',
-      '  background: ' + CFG.themeColor + '; color: ' + CFG.onThemeColor + ';',
+      // Resolved on the server: blank settings fall back to the theme colour
+      // with a label picked for legibility against it. See installButtonColors.
+      '  background: ' + CFG.install.buttonBackgroundColor + '; color: ' + CFG.install.buttonTextColor + ';',
       '}',
+      // The merchant's benefit lines. A list rather than a paragraph because
+      // that is what makes three short claims scannable at card size, and the
+      // marker is a character rather than a real list bullet so the indent
+      // stays predictable across the browsers this card lands in.
+      '.benefits { margin: 0 0 8px; padding: 0; list-style: none; font-size: 13px; }',
+      '.benefits li { margin: 0 0 3px; padding-left: 13px; position: relative; opacity: 0.9; }',
+      '.benefits li:last-child { margin-bottom: 0; }',
+      '.benefits li::before { content: "\\203A"; position: absolute; left: 2px; opacity: 0.7; }',
       '.btn.secondary { background: transparent; color: inherit; opacity: 0.7; padding: 7px 6px; }',
       '.btn:focus-visible { outline: 2px solid ' + CFG.themeColor + '; outline-offset: 2px; }',
 
@@ -532,6 +571,27 @@
     card.appendChild(img);
   }
 
+  /*
+   * The merchant's benefit lines, or nothing at all.
+   *
+   * Returns null rather than an empty <ul> so a merchant who has written none
+   * gets the same compact card as before this existed — an empty list still
+   * carries its margins, and the whole point of the card is that it is small.
+   */
+  function benefitsList() {
+    var lines = CFG.install.benefits || [];
+    if (!lines.length) return null;
+
+    var list = document.createElement('ul');
+    list.className = 'benefits';
+    for (var i = 0; i < lines.length; i++) {
+      var li = document.createElement('li');
+      li.textContent = lines[i];
+      list.appendChild(li);
+    }
+    return list;
+  }
+
   function showPrompt() {
     buildCard(function (card) {
       addIcon(card);
@@ -565,6 +625,13 @@
       actions.appendChild(install);
       actions.appendChild(later);
       body.appendChild(title);
+
+      // Benefits above the body copy: they are the claims, the body copy is the
+      // caveat under them ("doesn't take up storage space"), and that is the
+      // order a customer reads them in.
+      var benefits = benefitsList();
+      if (benefits) body.appendChild(benefits);
+
       body.appendChild(text);
       body.appendChild(actions);
       card.appendChild(body);

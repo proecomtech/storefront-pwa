@@ -50,8 +50,8 @@ function offline(settings) {
 </head>
 <body>
   <div class="box">
-    <h1>You are offline</h1>
-    <p>${escapeHtml(settings.name)} needs a connection to show this page. It will load as soon as you are back online.</p>
+    <h1>${escapeHtml(settings.offline.title)}</h1>
+    <p>${escapeHtml(settings.offline.message)}</p>
     <button type="button" onclick="location.reload()">Try again</button>
   </div>
   <script>
@@ -114,8 +114,8 @@ function shell(settings, storeUrl, sw) {
 <body>
   <div class="box" id="states">
     <div id="offline" hidden>
-      <h1>You are offline</h1>
-      <p>${escapeHtml(settings.name)} needs a connection. This will open as soon as you are back online.</p>
+      <h1>${escapeHtml(settings.offline.title)}</h1>
+      <p>${escapeHtml(settings.offline.message)}</p>
       <button type="button" onclick="location.reload()">Try again</button>
     </div>
     <div id="going">

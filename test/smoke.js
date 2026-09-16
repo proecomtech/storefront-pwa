@@ -474,6 +474,7 @@ async function run() {
   res = await event('not-an-event');
   ok('an unknown event name is still 204', res.status === 204, 'got ' + res.status);
 
+
   res = await fetch(BASE + '/pwa/proxy/event?type=installed', { method: 'POST' });
   ok('an event without ?shop is 400', res.status === 400, 'got ' + res.status);
 
@@ -485,8 +486,13 @@ async function run() {
   ok('card impressions are counted', counts.totals.shown === 2, JSON.stringify(counts.totals));
   ok('taps are counted', counts.totals.clicked === 1);
   ok('app opens are counted', counts.totals.launch === 1);
+  // Checked against the list the server declares rather than against a count,
+  // so adding an event does not fail a test whose point is that a made-up one
+  // is refused.
   ok('an unknown event name is not stored',
-    Object.keys(counts.totals).length === 4, JSON.stringify(counts.totals));
+    !('not-an-event' in counts.totals) &&
+    Object.keys(counts.totals).every((k) => counts.events.includes(k)),
+    JSON.stringify(counts.totals));
   ok('the window defaults to 30 days', counts.windowDays === 30, String(counts.windowDays));
   ok('the series has a row per day, including the empty ones', counts.series.length === 30,
     String(counts.series.length));
@@ -495,6 +501,42 @@ async function run() {
   ok('today carries the installs just recorded', counts.series[29].installed === 2);
   ok('the window is clamped to the retention period',
     (await (await admin('/api/stats?days=9999')).json()).windowDays === 180);
+
+  // Run before the flood below, which deliberately fills the shop's minute:
+  // anything counted after it would be dropped by design.
+  function deviceEvent(type, platform) {
+    return fetch(proxyUrl('/event?type=' + type + '&p=' + platform), { method: 'POST' });
+  }
+
+  await deviceEvent('installed', 'ios');
+  await deviceEvent('installed', 'android');
+  await deviceEvent('dismissed', 'ios');
+  await deviceEvent('dismissed', 'desktop');
+  await deviceEvent('installed', 'martian');
+
+  const split = await (await admin('/api/stats')).json();
+  ok('iOS installs are counted separately', split.platformRecent.ios.installed === 1,
+    JSON.stringify(split.platformRecent.ios));
+  ok('Android installs are counted separately', split.platformRecent.android.installed === 1);
+  ok('dismissals are counted', split.recent.dismissed === 2, String(split.recent.dismissed));
+  ok('dismissals are split by device too',
+    split.platformRecent.ios.dismissed === 1 && split.platformRecent.desktop.dismissed === 1);
+  // An open key space on a public endpoint is the thing not to have. The
+  // device family arrives in a query string anyone can type, so "martian" must
+  // collapse into the existing bucket rather than become a fifth one.
+  ok('an unrecognised device family does not create a bucket',
+    Object.keys(split.platformRecent).sort().join(',') === 'android,desktop,ios,other',
+    Object.keys(split.platformRecent).join(','));
+  ok('the device split adds up to the total',
+    split.platformRecent.ios.installed + split.platformRecent.android.installed +
+    split.platformRecent.desktop.installed + split.platformRecent.other.installed ===
+    split.recent.installed, JSON.stringify(split.platformRecent));
+  ok('all-time totals are split by device as well', split.platformTotals.ios.installed === 1);
+  // Two earlier installs carried no device at all, and the third was the
+  // unrecognised one. Counters with no device to attribute them to stay in
+  // `other` — inventing one would be worse than admitting it.
+  ok('events with no device, and unrecognised ones, both land in other',
+    split.platformTotals.other.installed === 3, JSON.stringify(split.platformTotals.other));
 
   // The ceiling is per shop, not per address: behind nginx every request comes
   // from 127.0.0.1, and behind Shopify's app proxy every legitimate storefront
@@ -507,7 +549,7 @@ async function run() {
   ok('a flood is capped rather than counted',
     capped.totals.shown > 1000 && capped.totals.shown <= 1202, String(capped.totals.shown));
   ok('the cap does not disturb the other counters',
-    capped.totals.installed === 2 && capped.totals.launch === 1, JSON.stringify(capped.totals));
+    capped.totals.installed === 5 && capped.totals.launch === 1, JSON.stringify(capped.totals));
 
   // The storefront script has to be told where to send them, or nothing above
   // ever happens on a real store.
@@ -517,6 +559,198 @@ async function run() {
   ok('pwa.js counts installs off appinstalled', counting.includes("addEventListener('appinstalled'"));
   ok('pwa.js sends by beacon so an unloading page still counts',
     counting.includes('navigator.sendBeacon'));
+  ok('pwa.js tags each beacon with a device family', counting.includes("'&p=' + encodeURIComponent(deviceFamily())"));
+
+  console.log('\n== install message ==');
+
+  res = await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      install: {
+        title: 'Install our app!',
+        benefits: ['Faster shopping', '  Exclusive discounts  ', '', 'Light on memory',
+                   'Four', 'Five', 'Six is one too many'],
+        buttonBackgroundColor: '#000000',
+        buttonTextColor: '#ffffff',
+      },
+    }),
+  });
+  const withBenefits = await res.json();
+  ok('benefits are stored', withBenefits.settings.install.benefits.length === 5,
+    JSON.stringify(withBenefits.settings.install.benefits));
+  ok('blank benefit lines are dropped, not stored as gaps',
+    withBenefits.settings.install.benefits.indexOf('') === -1);
+  ok('benefit text is trimmed',
+    withBenefits.settings.install.benefits[1] === 'Exclusive discounts',
+    withBenefits.settings.install.benefits[1]);
+  ok('a sixth benefit is refused with a reason',
+    withBenefits.warnings.some((warning) => warning.includes('benefits are kept')),
+    JSON.stringify(withBenefits.warnings));
+
+  res = await fetch(proxyUrl('/pwa.js'));
+  const withCard = await res.text();
+  ok('the storefront script carries the benefit lines', withCard.includes('"Exclusive discounts"'));
+  ok('and the button colours it should paint',
+    withCard.includes('"buttonBackgroundColor":"#000000"') && withCard.includes('"buttonTextColor":"#ffffff"'));
+
+  // Blank means "follow the theme colour", and the pair has to be resolved
+  // before it reaches a browser — a blank in the CSS would be no button at all.
+  await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ themeColor: '#0b5fff', install: { buttonBackgroundColor: '', buttonTextColor: '' } }),
+  });
+  const themed = await (await fetch(proxyUrl('/pwa.js'))).text();
+  ok('an unset button colour falls back to the theme colour',
+    themed.includes('"buttonBackgroundColor":"#0b5fff"'), 'theme colour not applied');
+  ok('and gets a label colour chosen for legibility',
+    themed.includes('"buttonTextColor":"#ffffff"'), 'label colour not derived');
+
+  console.log('\n== offline page ==');
+
+  await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      offline: { title: 'Oops! The connection has been lost.', message: 'Check your connectivity and try again.' },
+    }),
+  });
+
+  const offlineHtml = await (await fetch(proxyUrl('/offline'))).text();
+  ok('the offline page uses the merchant wording',
+    offlineHtml.includes('Oops! The connection has been lost.') &&
+    offlineHtml.includes('Check your connectivity and try again.'));
+
+  const shellHtml = await (await fetch(proxyUrl('/'))).text();
+  ok('and so does the launch shell, so the two never disagree',
+    shellHtml.includes('Oops! The connection has been lost.'));
+
+  const offlineSw = JSON.parse((await (await fetch(proxyUrl('/sw.js'))).text())
+    .match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('the worker gets the same wording for its last-resort response',
+    offlineSw.offlineText.includes('Oops! The connection has been lost.'));
+
+  console.log('\n== cache assets ==');
+
+  const beforeCache = (await (await admin('/api/settings')).json()).settings.serviceWorker.cacheVersion;
+
+  res = await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceWorker: {
+        cache: { enabled: true, homePage: true, googleFonts: false, storefront: false, cssFiles: true, images: true },
+        precache: {
+          enabled: true,
+          urls: [
+            '/cdn/shop/t/1/assets/base.css',
+            '//cdn.shopify.com/s/files/1/0085/assets/main.js',
+            'https://fonts.googleapis.com/css2?family=Inter',
+            'https://evil.example.com/tracker.js',
+            'javascript:alert(1)',
+          ],
+        },
+      },
+    }),
+  });
+  const cached = await res.json();
+  ok('cache rules are stored', cached.settings.serviceWorker.cache.googleFonts === false &&
+    cached.settings.serviceWorker.cache.images === true);
+  ok('storefront and Shopify CDN precache URLs are kept',
+    cached.settings.serviceWorker.precache.urls.length === 3,
+    JSON.stringify(cached.settings.serviceWorker.precache.urls));
+  // The precache list is fetched by every first-time visitor's browser on this
+  // app's say-so. A third-party URL in it would be this app making that request.
+  ok('a third-party precache URL is refused',
+    !cached.settings.serviceWorker.precache.urls.some((u) => u.includes('evil.example.com')),
+    JSON.stringify(cached.settings.serviceWorker.precache.urls));
+  ok('and so is a scheme that is not https',
+    !cached.settings.serviceWorker.precache.urls.some((u) => u.startsWith('javascript:')));
+  ok('the merchant is told what was dropped',
+    cached.warnings.some((warning) => warning.includes('precache')), JSON.stringify(cached.warnings));
+  ok('a protocol-relative URL is normalised to https',
+    cached.settings.serviceWorker.precache.urls.includes('https://cdn.shopify.com/s/files/1/0085/assets/main.js'),
+    JSON.stringify(cached.settings.serviceWorker.precache.urls));
+
+  // A worker whose rules changed must not go on serving the cache built under
+  // the old ones, and the only lever for that is the version in the cache name.
+  ok('changing the cache rules bumps the cache version',
+    cached.settings.serviceWorker.cacheVersion > beforeCache,
+    beforeCache + ' -> ' + cached.settings.serviceWorker.cacheVersion);
+
+  const swText = await (await fetch(proxyUrl('/sw.js'))).text();
+  const swConfig = JSON.parse(swText.match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('the worker is handed the cache rules', swConfig.cache.googleFonts === false);
+  ok('the merchant precache list reaches the worker',
+    swConfig.precache.includes('/cdn/shop/t/1/assets/base.css'), JSON.stringify(swConfig.precache));
+  ok('the shell is still precached first, whatever else is on the list',
+    swConfig.precache[0] === '/apps/pwa/', JSON.stringify(swConfig.precache));
+  // addAll() is all-or-nothing, so one 404 in a merchant's pasted list would
+  // leave the shell uncached too.
+  ok('the worker precaches entries one at a time so one bad URL cannot block install',
+    swText.includes('precacheOne(cache, url)'));
+
+  // Switched off, the list must not be handed over at all — leaving it in and
+  // relying on a flag would precache it anyway on the first install.
+  await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceWorker: { precache: { enabled: false, urls: cached.settings.serviceWorker.precache.urls } },
+    }),
+  });
+  const swOff = JSON.parse((await (await fetch(proxyUrl('/sw.js'))).text())
+    .match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('a disabled precache list is not sent to the worker',
+    !swOff.precache.some((u) => u.includes('base.css')), JSON.stringify(swOff.precache));
+
+  console.log('\n== reports and setup ==');
+
+  ok('reports need a session token', (await fetch(BASE + '/api/reports')).status === 401);
+  ok('the setup check needs a session token', (await fetch(BASE + '/api/setup')).status === 401);
+
+  const emptyReports = await (await admin('/api/reports')).json();
+  ok('a store with no reports gets an empty list', Array.isArray(emptyReports.reports) &&
+    emptyReports.reports.length === 0);
+  ok('an unknown report id is 404',
+    (await admin('/api/reports/deadbeef')).status === 404);
+  ok('deleting an unknown report is 404',
+    (await admin('/api/reports/deadbeef', { method: 'DELETE' })).status === 404);
+
+  console.log('\n== the admin screen ==');
+
+  res = await fetch(BASE + '/?shop=' + SHOP);
+  const adminHtml = await res.text();
+  ok('the admin renders', res.status === 200, 'got ' + res.status);
+  ok('it is framed only by this shop and the Shopify admin',
+    (res.headers.get('content-security-policy') || '').includes('frame-ancestors https://' + SHOP));
+
+  for (const route of ['home', 'configuration', 'install-message', 'cache-assets', 'offline-page',
+                       'settings', 'reports', 'analytics', 'setup', 'faqs']) {
+    ok('the admin carries the ' + route + ' page', adminHtml.includes('data-page="' + route + '"'));
+  }
+  ok('the sidebar links every page', adminHtml.split('data-route="').length - 1 === 10);
+  // Duplicate ids would make getElementById return whichever page came first,
+  // and the save bar is on five of them.
+  const adminIds = (adminHtml.match(/ id="[^"]+"/g) || []).map((s) => s.slice(5, -1));
+  ok('no id is used twice across the ten pages',
+    new Set(adminIds).size === adminIds.length, String(adminIds.length - new Set(adminIds).size) + ' duplicates');
+  // Data arrives over /api/settings, never in the document. The only scripts
+  // are App Bridge and /admin.js; an inline one would mean a merchant value had
+  // been interpolated into the page.
+  ok('the admin carries no inline script',
+    (adminHtml.match(/<script/g) || []).length === 2 &&
+    adminHtml.includes('cdn.shopify.com/shopifycloud/app-bridge.js') &&
+    adminHtml.includes('src="/admin.js"'),
+    String((adminHtml.match(/<script/g) || []).length) + ' script tags');
+
+  res = await fetch(BASE + '/admin.js');
+  const adminScript = await res.text();
+  ok('the admin script is served', res.status === 200 && adminScript.length > 1000);
+  ok('it carries no unsubstituted placeholders', !adminScript.includes('MAX_BENEFITS'));
+  // A parse error here is a blank admin with nothing in the server log.
+  ok('and it parses', (() => { try { new Function(adminScript); return true; } catch (e) { return false; } })());
 
   console.log('\n== uninstall webhook ==');
 

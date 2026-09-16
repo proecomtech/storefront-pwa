@@ -30,6 +30,7 @@ const manifestBuilder = require('./manifest.js');
 const validate = require('./validate.js');
 const auth = require('./auth.js');
 const pages = require('./pages.js');
+const reports = require('./reports.js');
 const adminPage = require('./admin-page.js');
 
 const PORT = parseInt(process.env.PORT || '3007', 10);
@@ -90,6 +91,23 @@ function readableOn(hex) {
   };
   const luminance = 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
   return luminance > 0.55 ? '#111111' : '#ffffff';
+}
+
+/**
+ * The install button's background and label colours, with the blanks filled in.
+ *
+ * Either may be left empty in the admin, and empty means "follow the theme
+ * colour" rather than "black". A merchant who sets only the background gets a
+ * label picked for legibility against it, which is the case worth getting right
+ * — a dark brand colour with the default dark label is an invisible button, and
+ * it would be invisible only once it was live.
+ */
+function installButtonColors(settings) {
+  const background = settings.install.buttonBackgroundColor || settings.themeColor;
+  return {
+    buttonBackgroundColor: background,
+    buttonTextColor: settings.install.buttonTextColor || readableOn(background),
+  };
 }
 
 /**
@@ -248,7 +266,11 @@ proxy.get('/pwa.js', (req, res) => {
       statusBarStyle: s.ios.statusBarStyle,
       splash: manifestBuilder.iosSplashLinks(s, req.proxyBase),
     },
-    install: s.install,
+    // The button's two colours are resolved here rather than on the storefront.
+    // Blank means "follow the theme colour", and working that out needs the
+    // luminance check below — which is worth doing once per request on a server
+    // instead of on every page view in every visitor's browser.
+    install: { ...s.install, ...installButtonColors(s) },
     sw: { enabled: s.serviceWorker.enabled, url: req.proxyBase + '/sw.js' },
     eventUrl: req.proxyBase + '/event',
     origin: '',
@@ -268,11 +290,18 @@ proxy.get('/sw.js', (req, res) => {
   const precache = [req.proxyBase + '/'];
   if (s.serviceWorker.offlinePage) precache.push(req.proxyBase + '/offline');
 
+  // The merchant's own list goes last, so that if the browser gives up partway
+  // through the install the two entries the app cannot work without are already
+  // in the cache.
+  if (s.serviceWorker.precache.enabled) precache.push(...s.serviceWorker.precache.urls);
+
   const config = {
     cachePrefix: 'shopify-pwa',
     version: s.serviceWorker.cacheVersion,
     offlineUrl: req.proxyBase + '/offline',
     shellUrl: req.proxyBase + '/',
+    offlineText: s.offline.title + '\n\n' + s.offline.message,
+    cache: s.serviceWorker.cache,
     precache,
   };
 
@@ -399,7 +428,14 @@ proxy.get('/check', (req, res) => {
  */
 proxy.post('/event', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  if (withinRate(req.shop)) stats.record(req.shop, String(req.query.type || ''));
+  // `p` is the device family the storefront script placed itself in — ios,
+  // android or desktop. It is sent by the page rather than derived from the
+  // User-Agent here because the script already had to know, to decide which
+  // install directions to show; asking twice would risk the two disagreeing.
+  // Anything unrecognised lands in `other` — see stats.platformKey.
+  if (withinRate(req.shop)) {
+    stats.record(req.shop, String(req.query.type || ''), String(req.query.p || ''));
+  }
   res.status(204).end();
 });
 
@@ -436,7 +472,8 @@ app.post('/webhooks/app/uninstalled', express.raw({ type: 'application/json', li
   if (settingsStore.isValidShop(shop)) {
     settingsStore.remove(shop);
     stats.remove(shop);
-    console.log('uninstalled: removed settings, assets and install counts for ' + shop);
+    reports.removeShop(shop);
+    console.log('uninstalled: removed settings, assets, install counts and reports for ' + shop);
   }
 
   // Always 200 once the HMAC is good. A non-2xx makes Shopify retry, and a
@@ -471,10 +508,15 @@ app.post('/api/settings', auth.requireSession, (req, res) => {
 
   // Bumping the cache version on every save would discard a returning
   // visitor's cache for a colour change. Only the things the worker actually
-  // bakes in warrant it.
+  // bakes in warrant it — the cache rules and the precache list among them,
+  // because a merchant who has just switched image caching off means "stop
+  // serving those from cache", not "stop adding new ones".
   const swChanged =
     settings.serviceWorker.offlinePage !== current.serviceWorker.offlinePage ||
-    settings.backgroundColor !== current.backgroundColor;
+    settings.backgroundColor !== current.backgroundColor ||
+    JSON.stringify(settings.serviceWorker.cache) !== JSON.stringify(current.serviceWorker.cache) ||
+    JSON.stringify(settings.serviceWorker.precache) !== JSON.stringify(current.serviceWorker.precache) ||
+    JSON.stringify(settings.offline) !== JSON.stringify(current.offline);
   settings.serviceWorker.cacheVersion = current.serviceWorker.cacheVersion + (swChanged ? 1 : 0);
 
   const saved = settingsStore.write(req.shop, settings);
@@ -606,6 +648,74 @@ app.delete('/api/assets/:kind', auth.requireSession, (req, res, next) => {
   return images.thumbnails(req.shop, saved)
     .then((previews) => res.json({ settings: saved, previews }))
     .catch(next);
+});
+
+/* -------------------------------------------------------- reports & setup */
+
+/**
+ * The proxy subpath, as this app's server has to guess it.
+ *
+ * On a storefront request Shopify sends it as `path_prefix`, so nothing there
+ * has to guess. The admin has no such luxury: it is an iframe on
+ * admin.shopify.com with no idea what subpath the app proxy is mounted at, and
+ * this app has no Admin API scopes to look it up with. So the checks below use
+ * the configured default and say which URL they tried, which turns a merchant
+ * who changed the subpath from confused into informed.
+ */
+const ADMIN_PROXY_BASE = process.env.PWA_PROXY_BASE || DEFAULT_PROXY_BASE;
+
+/**
+ * What the Quick setup wizard reads: the same installability checks a report
+ * scores, run against the live storefront, with no Lighthouse call.
+ *
+ * Slow by nature — it makes two cross-network fetches — so it is its own route
+ * rather than part of /api/settings, which the admin blocks on at load.
+ */
+app.get('/api/setup', auth.requireSession, async (req, res, next) => {
+  try {
+    const settings = settingsStore.read(req.shop);
+    res.set('Cache-Control', 'no-store');
+    res.json(await reports.checkSetup(req.shop, settings, ADMIN_PROXY_BASE));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/reports', auth.requireSession, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ reports: reports.list(req.shop), max: reports.MAX_REPORTS });
+});
+
+app.get('/api/reports/:id', auth.requireSession, (req, res) => {
+  const report = reports.read(req.shop, String(req.params.id));
+  res.set('Cache-Control', 'no-store');
+  if (!report) return res.status(404).json({ error: 'No such report.' });
+  return res.json({ report });
+});
+
+app.post('/api/reports', auth.requireSession, async (req, res) => {
+  try {
+    const settings = settingsStore.read(req.shop);
+    const report = await reports.generate(
+      req.shop,
+      settings,
+      ADMIN_PROXY_BASE,
+      String((req.body && req.body.strategy) || 'mobile')
+    );
+    res.set('Cache-Control', 'no-store');
+    return res.json({ report, reports: reports.list(req.shop) });
+  } catch (err) {
+    const status = err.status || 502;
+    if (status >= 500) console.error('report generation failed for ' + req.shop + ':', err);
+    return res.status(status).json({ error: err.message });
+  }
+});
+
+app.delete('/api/reports/:id', auth.requireSession, (req, res) => {
+  const removed = reports.remove(req.shop, String(req.params.id));
+  res.set('Cache-Control', 'no-store');
+  if (!removed) return res.status(404).json({ error: 'No such report.' });
+  return res.json({ reports: reports.list(req.shop) });
 });
 
 app.get('/admin.js', (req, res) => {
