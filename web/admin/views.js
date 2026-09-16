@@ -314,12 +314,24 @@ function cachePage() {
     '<p class="hint">A list of specific files to fetch into the cache the first time a customer visits, ' +
     'rather than the first time each one is needed. Up to ' + MAX_PRECACHE + '. Every entry is a ' +
     'download that first visit pays for, so keep it to the files every page uses.</p>' +
+
+    // Shown only while the plan withholds it. Left in place with its controls
+    // inert rather than removed: a setting that disappears reads as a bug.
+    '<div class="banner info" id="precacheLock" hidden>' +
+    '<strong>Precaching is on the paid plans</strong>' +
+    '<p>Every other cache rule above works on the free plan. Any list you have already saved is kept ' +
+    'and starts being used the moment you upgrade — nothing is lost in the meantime.</p>' +
+    '<p style="margin-top:10px"><a class="btn small" data-upgrade href="#/plans">See plans</a></p>' +
+    '</div>' +
+
+    '<div id="precacheBlock">' +
     toggleStrip('precacheEnabled', 'Precache') +
     '<label>File URLs to precache</label>' +
     '<span class="sublabel" style="margin-bottom:10px">Paths on your storefront (<code>/cdn/shop/t/1/assets/base.css</code>) ' +
     'or full URLs on <code>cdn.shopify.com</code> or Google Fonts. Anything else is dropped when you save.</span>' +
     '<div id="precacheUrls"></div>' +
     '<button type="button" class="secondary small" id="addPrecache">Add file URL</button>' +
+    '</div>' +
     '</section>' +
 
     '<section>' +
@@ -615,8 +627,8 @@ function plansPage() {
     '<table class="what2">' +
     '<tr><td>The PWA itself</td><td>The manifest, the icons, the iOS launch screens, the offline page ' +
     'and the service worker. A store on the free plan is as installable as one on a paid plan.</td></tr>' +
-    '<tr><td>Configuration</td><td>Every setting: name, logo, colours, install message, cache rules, ' +
-    'shortcuts, screenshots. Nothing in the Settings section is withheld.</td></tr>' +
+    '<tr><td>Configuration</td><td>Name, logo, colours, install message, cache rules, shortcuts, ' +
+    'screenshots and the offline page. The one control held back is the precache file list.</td></tr>' +
     '<tr><td>Help &amp; support</td><td>The quick setup wizard, which checks your live storefront, and ' +
     'the FAQs.</td></tr>' +
     '<tr><td>Install counts</td><td>Your totals and the daily chart on the Home page. The counters ' +
@@ -633,6 +645,8 @@ function plansPage() {
     '<table class="what2">' +
     '<tr><td>Unlimited installs</td><td>No monthly ceiling, so the install card never stops being ' +
     'offered.</td></tr>' +
+    '<tr><td>Precaching</td><td>A list of your own files fetched into the cache on a customer’s ' +
+    'first visit rather than when each one is first needed. The other cache rules work on every plan.</td></tr>' +
     '<tr><td>PWA / Performance reports</td><td>PageSpeed runs against your live storefront, scored ' +
     'alongside thirteen installability checks, with a history of the last twenty.</td></tr>' +
     '<tr><td>Analytics</td><td>Installs and dismissals split by iOS, Android and desktop, and the ' +

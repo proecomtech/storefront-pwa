@@ -319,7 +319,14 @@ proxy.get('/sw.js', (req, res) => {
   // The merchant's own list goes last, so that if the browser gives up partway
   // through the install the two entries the app cannot work without are already
   // in the cache.
-  if (s.serviceWorker.precache.enabled) precache.push(...s.serviceWorker.precache.urls);
+  //
+  // The plan is checked here as well as on save, because a shop that downgrades
+  // still has `enabled: true` on disk until the next time someone presses Save
+  // — and nobody has to ever press it again. The entitlement has to be read at
+  // the point the list is served, not only at the point it was written.
+  if (s.serviceWorker.precache.enabled && billing.has(req.shop, 'precache')) {
+    precache.push(...s.serviceWorker.precache.urls);
+  }
 
   const config = {
     cachePrefix: 'shopify-pwa',
@@ -567,6 +574,23 @@ app.get('/api/stats', auth.requireSession, (req, res) => {
 app.post('/api/settings', auth.requireSession, (req, res) => {
   const current = settingsStore.read(req.shop);
   const { settings, warnings } = validate.sanitise(req.body, current);
+
+  /*
+   * Precache is a paid control, and this is where that is enforced — the admin
+   * disables the block, but a POST does not have to come from the admin.
+   *
+   * Only the switch is forced. The merchant's URL list is written through
+   * untouched, so a shop that downgrades and later upgrades gets its list back
+   * rather than an empty box and no explanation. Done before the cache-version
+   * comparison below so that turning it off reaches returning visitors.
+   */
+  if (!billing.has(req.shop, 'precache') && settings.serviceWorker.precache.enabled) {
+    settings.serviceWorker.precache.enabled = false;
+    warnings.push(
+      'Precaching is on the paid plans, so it has been left off. Your file list has been saved and ' +
+      'will be used as soon as you upgrade.'
+    );
+  }
 
   // Bumping the cache version on every save would discard a returning
   // visitor's cache for a colour change. Only the things the worker actually

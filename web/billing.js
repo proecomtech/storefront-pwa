@@ -229,6 +229,7 @@ function statusFor(shop, installsThisMonth) {
     perMonthLabel: plan.perMonthLabel,
     interval: plan.interval,
     sections: plan.sections,
+    features: plan.features,
     source: record.source,
     verifiedAt: record.verifiedAt,
     // Whether the answer above is one the Partner API confirmed, or one this
@@ -245,6 +246,11 @@ function statusFor(shop, installsThisMonth) {
 
 function can(shop, section) {
   return plans.can(read(shop).planId, section);
+}
+
+/** Whether the shop's plan includes an individual control, such as precache. */
+function has(shop, feature) {
+  return plans.has(read(shop).planId, feature);
 }
 
 /* ---------------------------------------------------- Partner reconciliation */
@@ -389,6 +395,7 @@ module.exports = {
   RECONCILE_TTL_MS,
   can,
   claimHandle,
+  has,
   planFor,
   pricingUrl,
   read,

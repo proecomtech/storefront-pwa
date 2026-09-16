@@ -28,6 +28,21 @@ const FREE_SECTIONS = ['dashboard', 'settings', 'help'];
 const PAID_SECTIONS = ['dashboard', 'settings', 'reports', 'help'];
 
 /**
+ * Individual controls a plan can withhold, as distinct from whole sections.
+ *
+ * `precache` is the list of URLs the service worker fetches at install time. It
+ * sits inside the Settings section, which every plan has, so it needs its own
+ * switch rather than a section — a merchant on the free plan can still set every
+ * cache rule, just not hand the app a list of files to go and fetch.
+ *
+ * Withheld rather than hidden: the block stays on the page with its controls
+ * inert and a line saying which plan turns them on. A setting that vanishes
+ * reads as a bug; one that is visibly locked reads as a price.
+ */
+const FREE_FEATURES = [];
+const PAID_FEATURES = ['precache'];
+
+/**
  * How many installs the free plan covers in a UTC calendar month.
  *
  * It caps the app's own install card, not the browser's install menu — see
@@ -57,6 +72,7 @@ const PLANS = [
     billingNote: 'No card, no expiry.',
     installsPerMonth: FREE_INSTALLS_PER_MONTH,
     sections: FREE_SECTIONS,
+    features: FREE_FEATURES,
   },
   {
     id: 'monthly',
@@ -70,6 +86,7 @@ const PLANS = [
     billingNote: 'Billed monthly. Cancel any time.',
     installsPerMonth: null,
     sections: PAID_SECTIONS,
+    features: PAID_FEATURES,
   },
   {
     id: 'annual',
@@ -85,6 +102,7 @@ const PLANS = [
     billingNote: 'Billed yearly at $59.88. Two months cheaper than monthly.',
     installsPerMonth: null,
     sections: PAID_SECTIONS,
+    features: PAID_FEATURES,
   },
 ];
 
@@ -126,6 +144,11 @@ function resolve(handle) {
 
 function can(planId, section) {
   return byId(planId).sections.includes(section);
+}
+
+/** Whether a plan includes an individual control. See FREE_FEATURES. */
+function has(planId, feature) {
+  return byId(planId).features.includes(feature);
 }
 
 /**
@@ -177,7 +200,9 @@ function publicTable(currentId) {
     billingNote: plan.billingNote,
     installsPerMonth: plan.installsPerMonth,
     sections: plan.sections,
+    features: plan.features,
     reports: plan.sections.includes('reports'),
+    precache: plan.features.includes('precache'),
     current: plan.id === currentId,
     savingPercent: plan.id === 'annual' ? annualSavingPercent() : 0,
   }));
@@ -191,6 +216,7 @@ module.exports = {
   annualSavingPercent,
   byId,
   can,
+  has,
   publicTable,
   resolve,
 };

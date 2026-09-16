@@ -136,6 +136,11 @@ function script() {
     return !plan || plan.sections.indexOf(section) !== -1;
   }
 
+  /** The same, for an individual control rather than a whole section. */
+  function hasFeature(name) {
+    return !plan || (plan.features || []).indexOf(name) !== -1;
+  }
+
   /*
    * Fields that map one input to one settings path.
    *
@@ -328,6 +333,9 @@ function script() {
     });
 
     updateCounters();
+    // These rows are brand new elements, so any disabled state a plan imposes
+    // on them has to be put back on.
+    applyFeatureLocks();
   }
 
   function rowValues(boxId) {
@@ -918,10 +926,11 @@ function script() {
       : entry.installsPerMonth + ' installs a month');
     list.appendChild(installs);
 
-    list.appendChild(node('li', null, 'Full PWA configuration'));
+    list.appendChild(node('li', null, 'Name, logo, colours, install message'));
+    list.appendChild(node('li', null, 'Offline page and cache rules'));
     list.appendChild(node('li', null, 'Quick setup wizard and FAQs'));
-    list.appendChild(node('li', entry.reports ? null : 'no',
-      'PWA / Performance reports'));
+    list.appendChild(node('li', entry.precache ? null : 'no', 'Precache file list'));
+    list.appendChild(node('li', entry.reports ? null : 'no', 'PWA / Performance reports'));
     list.appendChild(node('li', entry.reports ? null : 'no', 'Analytics by device'));
     card.appendChild(list);
 
@@ -987,6 +996,32 @@ function script() {
     panel.hidden = allowed;
   }
 
+  /*
+   * Disable the controls a plan withholds, rather than removing them.
+   *
+   * Re-applied after every render, not once at load: renderRepeat rebuilds the
+   * precache rows from scratch whenever the settings arrive or a row is added,
+   * and a fresh <input> does not remember that it was meant to be disabled.
+   *
+   * This is presentation. The server forces the same switch off on save and
+   * checks it again when it builds the worker's config, because a POST does not
+   * have to come from this screen.
+   */
+  function applyFeatureLocks() {
+    var block = el('precacheBlock');
+    var lock = el('precacheLock');
+    if (!block || !lock) return;
+
+    var allowed = hasFeature('precache');
+
+    lock.hidden = allowed;
+    block.className = allowed ? '' : 'off';
+
+    all('#precacheBlock input, #precacheBlock button').forEach(function (control) {
+      control.disabled = !allowed;
+    });
+  }
+
   function renderPlan(status) {
     plan = status;
 
@@ -1004,6 +1039,7 @@ function script() {
 
     lockSection('reportsBody', 'reportsLocked', allows('reports'));
     lockSection('analyticsBody', 'analyticsLocked', allows('reports'));
+    applyFeatureLocks();
 
     var cards = el('planCards');
     if (cards) {
@@ -1407,6 +1443,8 @@ function script() {
     renderToggles();
     renderAssets();
     updateCounters();
+    // Last, because renderRepeat above has just rebuilt the precache inputs.
+    applyFeatureLocks();
 
     saveEnabled(true);
 

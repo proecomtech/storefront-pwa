@@ -191,7 +191,7 @@ The admin is ten pages behind a sidebar:
 | **Home** | The install figures, the two theme steps the app cannot do for you, and where to go for everything else. |
 | **Configuration** | Name, short name, description, logo, theme and background colours — with a live phone preview of the home screen and the splash screen. |
 | **Install message** | The invitation card: title, up to five benefit bullets, body copy, button label and its two colours, delay, position, dismissal period. Previews as Android and as iOS, which differ because Safari has no install dialog to open. |
-| **Cache assets** | What the service worker keeps (home page, Google Fonts, storefront pages, CSS/JS, images), a precache list, and the forced-refresh block. |
+| **Cache assets** | What the service worker keeps (home page, Google Fonts, storefront pages, CSS/JS, images), the precache list — a paid control, shown disabled on Free — and the forced-refresh block. |
 | **Offline page** | The title and message shown with no connection, previewed on a phone. |
 | **Settings** | Launch behaviour, shortcuts, language and categories, iOS, install-dialog screenshots, the service worker toggle, and the master switch. |
 | **PWA / Performance reports** | A PageSpeed run plus this app's own installability score, stored as a history of up to twenty. |
@@ -306,13 +306,20 @@ app with no OAuth flow and no stored access token charge money at all.
 | Dashboard | ✓ | ✓ | ✓ |
 | Settings | ✓ | ✓ | ✓ |
 | Help & support | ✓ | ✓ | ✓ |
+| Precache list | — | ✓ | ✓ |
 | Reports | — | ✓ | ✓ |
 
-The free plan is a working PWA, not a trial. Every setting, the manifest, the
-icons, the iOS launch screens, the offline page, the service worker and the
-quick setup wizard are all on it. What a paid plan adds is the Reports section —
-PageSpeed runs and the per-device analytics — and the removal of the install
-cap.
+The free plan is a working PWA, not a trial. The manifest, the icons, the iOS
+launch screens, the offline page, the install message, the service worker, the
+five cache rules and the quick setup wizard are all on it. A paid plan adds the
+Reports section — PageSpeed runs and per-device analytics — the precache file
+list, and the removal of the install cap.
+
+Two kinds of entitlement, because they gate different things. **Sections** are
+whole nav groups, and `reports` is the only one a plan can withhold. **Features**
+are individual controls inside a section every plan has: `precache` is one,
+because it sits in Settings next to the cache rules that are not withheld. Both
+live in `web/plans.js`.
 
 ### The install cap
 
@@ -366,11 +373,23 @@ Two failure directions are chosen deliberately, both in `web/plans.js`:
 
 ### Where it is enforced
 
-In the server, not the admin. `requireSection('reports')` guards all four
-`/api/reports` routes and answers **402** with the upgrade URL; `/api/stats`
-withholds the per-device breakdown on Free while still returning the totals the
-Home page needs on every plan. The sidebar padlocks and the upgrade panels are
-there so a merchant sees the boundary before they click it — they are not the
+In the server, not the admin.
+
+- `requireSection('reports')` guards all four `/api/reports` routes and answers
+  **402** with the upgrade URL.
+- `/api/stats` withholds the per-device breakdown on Free while still returning
+  the totals the Home page needs on every plan.
+- `POST /api/settings` forces `serviceWorker.precache.enabled` to false on Free
+  and says so in the save warnings. **The URL list is written through
+  untouched** — a shop that downgrades and later upgrades gets its files back
+  rather than an empty box and no explanation.
+- The `/sw.js` route checks the plan *again* when it builds the precache list.
+  A shop that downgrades still has `enabled: true` on disk and nobody ever has
+  to press Save again, so the entitlement has to be read where the list is
+  served, not only where it was written.
+
+The sidebar padlocks, the upgrade panels and the disabled precache block are
+there so a merchant sees the boundary before they hit it — they are not the
 boundary.
 
 ## Install figures
@@ -458,10 +477,13 @@ redeploy, and a merchant chasing a stale asset needs something to turn.
 | Google Fonts | `fonts.googleapis.com` and `fonts.gstatic.com`, which are one decision because caching the stylesheet without the font files is caching neither |
 
 Carts, checkouts, accounts, search and every Shopify internal path are excluded
-whatever is switched on. Precache entries are limited to paths on the storefront
-and files on `cdn.shopify.com` or Google Fonts — every entry is a request this
-app makes every first-time visitor's browser perform, so a third-party URL there
-would be the app fetching someone else's server from a customer's browser.
+whatever is switched on. All five rules are on every plan.
+
+**Precaching is a paid control** — see [Billing](#billing). Entries are limited
+to paths on the storefront and files on `cdn.shopify.com` or Google Fonts: every
+entry is a request this app makes every first-time visitor's browser perform, so
+a third-party URL there would be the app fetching someone else's server from a
+customer's browser.
 Entries are fetched one at a time rather than through `cache.addAll`, which is
 all-or-nothing: one 404 in a pasted list would otherwise leave the app shell
 uncached too.

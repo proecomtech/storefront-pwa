@@ -673,8 +673,9 @@ async function run() {
   const swText = await (await fetch(proxyUrl('/sw.js'))).text();
   const swConfig = JSON.parse(swText.match(/var CFG = (\{[\s\S]*?\});/)[1]);
   ok('the worker is handed the cache rules', swConfig.cache.googleFonts === false);
-  ok('the merchant precache list reaches the worker',
-    swConfig.precache.includes('/cdn/shop/t/1/assets/base.css'), JSON.stringify(swConfig.precache));
+  // The cache rules themselves are on every plan; the precache list is not, and
+  // this shop is still on the free plan here. Both sides of that are asserted
+  // in the plans section below — including that the list survives the wait.
   ok('the shell is still precached first, whatever else is on the list',
     swConfig.precache[0] === '/apps/pwa/', JSON.stringify(swConfig.precache));
   // addAll() is all-or-nothing, so one 404 in a merchant's pasted list would
@@ -717,6 +718,8 @@ async function run() {
   ok('the free plan covers dashboard, settings and help',
     planStatus.sections.join(',') === 'dashboard,settings,help', planStatus.sections.join(','));
   ok('but not reports', planStatus.sections.indexOf('reports') === -1);
+  ok('and not precaching', planStatus.features.indexOf('precache') === -1,
+    JSON.stringify(planStatus.features));
   ok('all three plans are offered', planStatus.plans.length === 3,
     planStatus.plans.map((p) => p.id).join(','));
   ok('the paid plans are $5.99 monthly and $4.99 a month yearly',
@@ -760,6 +763,36 @@ async function run() {
   // The setup wizard is Help & Support, which every plan includes.
   ok('the quick setup wizard is not gated', (await admin('/api/setup')).status !== 402);
 
+  /*
+   * Precache is a paid control inside a free section, so it is enforced on the
+   * save rather than on a route. The list itself is deliberately kept: a shop
+   * that upgrades later should get its files back, not an empty box.
+   */
+  res = await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceWorker: {
+        precache: { enabled: true, urls: ['/cdn/shop/t/1/assets/base.css'] },
+      },
+    }),
+  });
+  const freePrecache = await res.json();
+  ok('the free plan cannot switch precaching on',
+    freePrecache.settings.serviceWorker.precache.enabled === false,
+    JSON.stringify(freePrecache.settings.serviceWorker.precache));
+  ok('but its file list is kept for when it upgrades',
+    freePrecache.settings.serviceWorker.precache.urls.length === 1,
+    JSON.stringify(freePrecache.settings.serviceWorker.precache.urls));
+  ok('and the merchant is told why, not silently overruled',
+    freePrecache.warnings.some((w) => w.includes('Precaching is on the paid plans')),
+    JSON.stringify(freePrecache.warnings));
+
+  const freeSw = JSON.parse((await (await fetch(proxyUrl('/sw.js'))).text())
+    .match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('and the worker is never handed the list on a free plan',
+    !freeSw.precache.some((u) => u.includes('base.css')), JSON.stringify(freeSw.precache));
+
   res = await admin('/api/plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -768,8 +801,58 @@ async function run() {
   planStatus = await res.json();
   ok('a plan handle from Shopify\'s redirect is claimed', planStatus.planId === 'annual', planStatus.planId);
   ok('the paid plan unlocks reports', planStatus.sections.indexOf('reports') !== -1);
+  ok('and precaching', planStatus.features.indexOf('precache') !== -1,
+    JSON.stringify(planStatus.features));
   ok('and removes the install cap', planStatus.allowance.limited === false,
     JSON.stringify(planStatus.allowance));
+
+  // The list saved while the shop was on the free plan is still there, so
+  // turning the switch on is all the merchant has to do.
+  res = await admin('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceWorker: {
+        precache: { enabled: true, urls: ['/cdn/shop/t/1/assets/base.css'] },
+      },
+    }),
+  });
+  ok('a paid plan can switch precaching on',
+    (await res.json()).settings.serviceWorker.precache.enabled === true);
+
+  const paidSw = JSON.parse((await (await fetch(proxyUrl('/sw.js'))).text())
+    .match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('and the worker is handed the list',
+    paidSw.precache.includes('/cdn/shop/t/1/assets/base.css'), JSON.stringify(paidSw.precache));
+
+  /*
+   * The downgrade. `enabled: true` is still on disk and nobody has to press
+   * Save ever again, so the entitlement has to be read where the list is
+   * served, not only where it was written.
+   */
+  await admin('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planHandle: 'free' }),
+  });
+  const downgradedSw = JSON.parse((await (await fetch(proxyUrl('/sw.js'))).text())
+    .match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('a shop that downgrades stops being precached without touching its settings',
+    !downgradedSw.precache.some((u) => u.includes('base.css')), JSON.stringify(downgradedSw.precache));
+  ok('the app shell is still precached, whatever the plan',
+    downgradedSw.precache[0] === '/apps/pwa/', JSON.stringify(downgradedSw.precache));
+  ok('and the stored switch is untouched, so upgrading restores it without a re-save',
+    (await (await admin('/api/settings')).json()).settings.serviceWorker.precache.enabled === true);
+
+  await admin('/api/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planHandle: 'pro-annual' }),
+  });
+  const restoredSw = JSON.parse((await (await fetch(proxyUrl('/sw.js'))).text())
+    .match(/var CFG = (\{[\s\S]*?\});/)[1]);
+  ok('upgrading again brings the list straight back',
+    restoredSw.precache.includes('/cdn/shop/t/1/assets/base.css'), JSON.stringify(restoredSw.precache));
 
   res = await admin('/api/reports');
   const emptyReports = await res.json();
