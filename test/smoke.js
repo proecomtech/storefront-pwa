@@ -228,6 +228,21 @@ async function run() {
   ok('check page is 200', res.status === 200);
   ok('check page links the manifest', check.includes('<link rel="manifest" href="/apps/pwa/manifest.json">'));
 
+  /*
+   * Parse the script the page actually serves, not the module that built it.
+   * That script lives inside a template literal, so every backslash in it is
+   * consumed once before a browser sees it: a regex written /\/x/ arrives as
+   * //x, which is a line comment, which silently swallows the rest of the
+   * line. node --check on pages.js cannot see any of that — the string is
+   * valid either way — and the page still returns 200 with the whole check
+   * page dead. Only parsing the output catches it.
+   */
+  const checkScript = (check.match(/<script>([\s\S]*?)<\/script>/) || [])[1] || '';
+  ok('the check page carries an inline script', checkScript.length > 1000);
+  ok('and it parses',
+    (() => { try { new Function(checkScript); return true; } catch (e) { return false; } })());
+  ok('no regex in it was flattened into a comment', !/[^:]\/\/[a-z]+\(\?:/.test(checkScript));
+
   res = await fetch(proxyUrl('/health'));
   ok('proxy health is 200', res.status === 200);
 
