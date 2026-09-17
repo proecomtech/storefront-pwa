@@ -1128,6 +1128,50 @@ async function run() {
   // normal case, since app/uninstalled ran 48 hours earlier — is still a 200.
   res = await compliance('shop/redact');
   ok('a repeat shop/redact is still 200', res.status === 200, 'got ' + res.status);
+
+  console.log('\n== storefront diagnosis ==');
+
+  // In-process, because what is being tested is a pure classifier and standing
+  // up a fake Shopify storefront to reach it through generate() would test the
+  // fake. DATA_DIR is set first so requiring the module does not create a
+  // reports directory inside the repo.
+  process.env.DATA_DIR = DATA_DIR;
+  const reportsModule = require(path.join(APP, 'web', 'reports.js'));
+  const MANIFEST_URL = 'https://' + SHOP + '/apps/pwa/manifest.json';
+  const diagnose = (res, body) => reportsModule.explainManifestFailure(res, body, MANIFEST_URL);
+
+  // A locked store answers 200 with the password page, which is why "not valid
+  // JSON" used to be all a merchant was told — the status code says nothing is
+  // wrong and the body is a login form.
+  const locked = diagnose({ status: 200, ok: true, url: MANIFEST_URL },
+    '<!doctype html><html><body class="template-password"></body></html>');
+  ok('a password page is named as one, not as bad JSON',
+    /password protected/i.test(locked) && /Online Store > Preferences/.test(locked), locked);
+
+  ok('a redirect to /password counts too',
+    /password protected/i.test(diagnose({ status: 200, ok: true, url: 'https://' + SHOP + '/password' },
+      '<!doctype html><html></html>')));
+
+  // Shopify's own 404 page, verbatim markers from a real response.
+  const missing = diagnose({ status: 404, ok: false, url: MANIFEST_URL },
+    '<!DOCTYPE html>\n<html class="shop-404" lang="en">');
+  ok('Shopify\'s 404 page is reported as the proxy not routing',
+    /app proxy is not routing/.test(missing), missing);
+
+  // Any other HTML is the theme, which means the same thing and needs saying
+  // differently — there is no 404 to point at.
+  const themePage = diagnose({ status: 200, ok: true, url: MANIFEST_URL },
+    '<!doctype html><html><body>a theme page</body></html>');
+  ok('a theme page is reported as the proxy not routing',
+    /web page rather than the manifest/.test(themePage) && /app proxy/.test(themePage), themePage);
+
+  // The original message survives for the case it was actually about.
+  ok('genuinely broken JSON still reads as broken JSON',
+    /not with valid JSON/.test(diagnose({ status: 200, ok: true, url: MANIFEST_URL }, '{"name":')));
+
+  // Four distinct causes must not collapse into one sentence again.
+  ok('the four causes give four different answers',
+    new Set([locked, missing, themePage]).size === 3);
 }
 
 const server = spawn(process.execPath, ['web/server.js'], {

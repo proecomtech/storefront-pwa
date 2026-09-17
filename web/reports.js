@@ -270,15 +270,59 @@ function check(label, ok, detail) {
   return { label, ok: Boolean(ok), detail };
 }
 
-/**
- * Read the storefront as a visitor's browser would, and say what is actually
- * there.
+/*
+ * Shopify serves its own pages on the storefront domain, at HTTP 200 as often
+ * as not, and they are the three most likely things to come back from a proxy
+ * path that is not working. Telling them apart is the whole value of this
+ * check: "not valid JSON" is true of all three and useful for none.
  *
- * This is the half of the report a merchant cannot get anywhere else. Every
- * other tool measures the storefront; only this app knows what the storefront
- * is supposed to be serving on its behalf, so only this app can say "the embed
- * is off" rather than "no manifest found".
+ * Markers rather than status codes, because the status lies. A password-
+ * protected store answers 200 with the password page, and a storefront with no
+ * proxy route answers 404 with an HTML body that is not an error as far as
+ * fetch is concerned.
  */
+function isPasswordPage(res, body) {
+  if (res && res.url && /\/password\b/.test(res.url)) return true;
+  // `storefront_password` is the form_type on Shopify's own password form;
+  // `template-password` is the body class the theme renders it under.
+  return /storefront_password|template-password/i.test(body || '');
+}
+
+function isShopifyNotFound(res, body) {
+  return (res && res.status === 404) || /class="shop-404"|class='shop-404'/i.test(body || '');
+}
+
+/**
+ * Say what actually answered the manifest URL, and what to do about it.
+ *
+ * Each branch names one cause and one action. A merchant reading this has a
+ * storefront that is not installable and no way to see why from the outside —
+ * the manifest URL looks fine in a browser if you do not notice that what came
+ * back was a login form.
+ */
+function explainManifestFailure(res, body, url) {
+  if (isPasswordPage(res, body)) {
+    return 'The storefront is password protected, so ' + url + ' answers with the password page ' +
+      'rather than the manifest. No browser can install a store it cannot read: remove the password ' +
+      'under Online Store > Preferences.';
+  }
+
+  if (isShopifyNotFound(res, body)) {
+    return 'Shopify answered its own 404 page for ' + url + ', which means the app proxy is not ' +
+      'routing on this store. Confirm the app version carrying the app proxy has been released, and ' +
+      'that its subpath is "pwa" under the "apps" prefix.';
+  }
+
+  if (/^\s*<(?:!doctype|html)/i.test(body || '')) {
+    return url + ' answered with a web page rather than the manifest (HTTP ' + res.status + '). ' +
+      'That is the theme answering, which means the app proxy is not routing this path.';
+  }
+
+  if (!res.ok) return 'The manifest URL answered HTTP ' + res.status + '.';
+
+  return 'The manifest URL answered, but not with valid JSON.';
+}
+
 async function inspectStorefront(shop, proxyBase) {
   const result = {
     manifest: null,
@@ -289,33 +333,24 @@ async function inspectStorefront(shop, proxyBase) {
     notes: [],
   };
 
-  try {
-    const res = await fetchWithTimeout(result.manifestUrl, STOREFRONT_TIMEOUT_MS, {
-      headers: { Accept: 'application/manifest+json, application/json' },
-    });
-    if (res.ok) {
-      result.manifest = await res.json().catch(() => null);
-      if (!result.manifest) result.notes.push('The manifest URL answered, but not with valid JSON.');
-    } else {
-      result.notes.push('The manifest URL answered HTTP ' + res.status + '.');
-    }
-  } catch (err) {
-    result.notes.push('Could not reach the manifest: ' + (err.name === 'AbortError' ? 'timed out' : err.message));
-  }
-
+  /*
+   * The home page is read first, and deliberately so. Whether the store is
+   * locked decides how to read everything after it — a password-protected store
+   * answers every storefront URL with the password page at HTTP 200, so a
+   * manifest check running first would report "not valid JSON" and send a
+   * merchant looking for a bug in a manifest they were never served.
+   */
   try {
     const res = await fetchWithTimeout(result.homeUrl, STOREFRONT_TIMEOUT_MS, {
       headers: { Accept: 'text/html' },
     });
     const html = await res.text();
 
-    // A store with storefront password on serves the password page to everyone
-    // who is not logged in, this app included. Worth saying outright: every
-    // check below would otherwise fail for a reason that has nothing to do
-    // with the app.
-    if (res.url && /\/password/.test(res.url)) {
+    if (isPasswordPage(res, html)) {
       result.passwordProtected = true;
-      result.notes.push('The storefront is password protected, so these checks could only see the password page.');
+      result.notes.push('The storefront is password protected, so these checks could only see the ' +
+        'password page. Remove it under Online Store > Preferences — the store is not installable ' +
+        'by anyone while it is on.');
     }
 
     result.embedFound = html.includes(proxyBase + '/pwa.js') ||
@@ -323,6 +358,29 @@ async function inspectStorefront(shop, proxyBase) {
       html.includes('shopify-pwa');
   } catch (err) {
     result.notes.push('Could not load the storefront home page: ' + (err.name === 'AbortError' ? 'timed out' : err.message));
+  }
+
+  try {
+    const res = await fetchWithTimeout(result.manifestUrl, STOREFRONT_TIMEOUT_MS, {
+      headers: { Accept: 'application/manifest+json, application/json' },
+    });
+
+    // Read as text and parse here rather than calling res.json(): the body is
+    // the only evidence of what went wrong, and res.json() throws it away.
+    const body = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(body); } catch (err) { parsed = null; }
+
+    if (res.ok && parsed) {
+      result.manifest = parsed;
+    } else if (result.passwordProtected && isPasswordPage(res, body)) {
+      // Already said once, at the top, in the same words. Repeating it per
+      // check is how a report stops being read.
+    } else {
+      result.notes.push(explainManifestFailure(res, body, result.manifestUrl));
+    }
+  } catch (err) {
+    result.notes.push('Could not reach the manifest: ' + (err.name === 'AbortError' ? 'timed out' : err.message));
   }
 
   return result;
@@ -517,6 +575,10 @@ module.exports = {
   MAX_REPORTS,
   REPORTS_DIR,
   checkSetup,
+  // Exported for the tests. What a merchant is told when the storefront serves
+  // something other than the manifest is the whole point of this check, and it
+  // is not reachable through generate() without standing up a fake storefront.
+  explainManifestFailure,
   generate,
   list,
   read,
