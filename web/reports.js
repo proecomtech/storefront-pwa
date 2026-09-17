@@ -350,7 +350,7 @@ function pwaChecksFor(settings, storefront) {
     check('App embed is on in your theme', storefront.embedFound,
       storefront.embedFound
         ? 'The storefront is loading the app.'
-        : 'Turn on the Storefront PWA app embed in Theme editor > App embeds. Nothing else works until this is on.'),
+        : 'Turn on the Pocketfront PWA app embed in Theme editor > App embeds. Nothing else works until this is on.'),
 
     check('Manifest is reachable', Boolean(storefront.manifest),
       storefront.manifest

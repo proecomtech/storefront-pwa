@@ -194,6 +194,19 @@ async function run() {
   ok('pwa.js carries the iOS splash table', pwa.includes('-webkit-device-pixel-ratio'));
   ok('pwa.js js content type', (res.headers.get('content-type') || '').includes('javascript'));
 
+  // Preview mode. These assert the wiring in the served script, not the card
+  // appearing — that needs a browser. What they pin down is that the three
+  // gates a preview has to clear all consult PREVIEW, since a preview that
+  // silently obeys the delay is the exact failure it exists to rule out.
+  ok('pwa.js reads the preview flag from the URL', pwa.includes('pwa-preview=1'));
+  ok('a preview skips the delay', pwa.includes('var delay = PREVIEW ? 0 :'));
+  ok('a preview ignores dismissal and install history', pwa.includes('if (PREVIEW) return true;'));
+  ok('a preview shows the card even where nothing can install',
+    pwa.includes('if (PREVIEW || deferredPrompt || instructionsFor(platform()).length)'));
+  ok('a preview writes no analytics', pwa.includes('|| PREVIEW) return;'));
+  ok('closing a preview does not suppress the real card',
+    pwa.includes('if (PREVIEW) return hideCard();'));
+
   // Parse what is actually served, not the template. A substitution that lands
   // in the wrong place still yields parseable JavaScript, so also assert the
   // config reached the assignment the script reads at runtime.
@@ -997,6 +1010,12 @@ async function run() {
     adminHtml.split('data-section="').length - 1 === ROUTES.length);
   ok('both report pages carry an upgrade panel for merchants on the free plan',
     adminHtml.includes('id="reportsLocked"') && adminHtml.includes('id="analyticsLocked"'));
+
+  // The preview URL is built server-side because the client only ever learns
+  // the shop from a signed token, which arrives after this markup is written.
+  ok('the admin carries a storefront preview link for the install card',
+    adminHtml.includes('data-preview="https://' + SHOP + '/?pwa-preview=1"') &&
+    adminHtml.includes('id="previewLink"'));
   // Duplicate ids would make getElementById return whichever page came first,
   // and the save bar is on five of them.
   const adminIds = (adminHtml.match(/ id="[^"]+"/g) || []).map((s) => s.slice(5, -1));

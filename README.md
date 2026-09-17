@@ -1,4 +1,4 @@
-# Storefront PWA — Shopify app
+# Pocketfront PWA — Shopify app
 
 Makes a Shopify storefront installable as an app on desktop (Chrome, Edge,
 Safari), Android and iOS, without touching theme code.
@@ -172,12 +172,12 @@ passes.
 
 ### 3. Turn on the app embed
 
-Theme editor → **App embeds** → enable **Storefront PWA**. Nothing works until
+Theme editor → **App embeds** → enable **Pocketfront PWA**. Nothing works until
 this is on: it is what puts `<link rel="manifest">` in `<head>`.
 
 ### 4. Configure
 
-Apps → Storefront PWA. Set the name and short name, upload a square logo of at
+Apps → Pocketfront PWA. Set the name and short name, upload a square logo of at
 least 512×512, and set the theme and background colours. Everything else has a
 working default.
 

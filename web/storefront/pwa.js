@@ -31,6 +31,27 @@
   var uiRoot = null;
   var shadow = null;
 
+  /*
+   * Preview mode: ?pwa-preview=1 on any storefront URL.
+   *
+   * Without it the card is unverifiable. It appears some seconds after load,
+   * only on a browser that can install, and only if this browser has not
+   * dismissed it in the last fortnight — so "I enabled the app embed and saw
+   * nothing" has half a dozen innocent explanations and no way to tell them
+   * apart. Preview collapses all of them: show the card now, on this browser,
+   * whatever it has seen before.
+   *
+   * Read once at load rather than per call, so a card already on screen is not
+   * affected by a later history.pushState from the theme.
+   */
+  var PREVIEW = (function () {
+    try {
+      return /(?:^|[?&])pwa-preview=1(?:&|$)/.test(window.location.search || '');
+    } catch (e) {
+      return false;
+    }
+  })();
+
   /* ---------------------------------------------------------------- helpers */
 
   function store(key, value) {
@@ -103,7 +124,10 @@
    * the tab over to a freshly installed app window.
    */
   function send(type) {
-    if (!CFG.eventUrl || isAutomated()) return;
+    // PREVIEW is here rather than at each call site so that every event type —
+    // shown, clicked, dismissed, installed, launched — is covered by one line.
+    // A merchant checking their own card must not move their own analytics.
+    if (!CFG.eventUrl || isAutomated() || PREVIEW) return;
     try {
       var url = CFG.eventUrl + (CFG.eventUrl.indexOf('?') === -1 ? '?' : '&') +
                 'type=' + encodeURIComponent(type) +
@@ -400,6 +424,11 @@
    * means "not on this screen" rather than "no".
    */
   function dismiss() {
+    // A merchant who opens a preview and closes it has not dismissed anything.
+    // Persisting here would silence the card on their own browser for a
+    // fortnight and send them back to support saying it stopped working.
+    if (PREVIEW) return hideCard();
+
     var days = CFG.install.dismissDays;
     if (days > 0) store(DISMISS_KEY, String(Date.now() + days * 86400000));
     if (markSession(DISMISSED_KEY)) send('dismissed');
@@ -745,8 +774,16 @@
   }
 
   function shouldOffer() {
+    // These two hold even in preview: a card switched off in the admin is one
+    // the merchant asked not to see, and a card inside the installed app window
+    // would be inviting someone to install what they are already running.
     if (!CFG.install.enabled) return false;
     if (isStandalone()) return false;
+
+    // The rest are per-visitor history, which is exactly what a preview is for
+    // getting past.
+    if (PREVIEW) return true;
+
     if (isAutomated()) return false;
     if (stored(INSTALLED_KEY) === '1') return false;
     if (Date.now() < dismissedUntil()) return false;
@@ -755,6 +792,10 @@
 
   function scheduleCard() {
     if (!shouldOffer()) return;
+
+    // A preview waits for nothing. The delay is the single most common reason a
+    // merchant concludes the card is broken.
+    var delay = PREVIEW ? 0 : Math.max(0, CFG.install.delaySeconds) * 1000;
 
     window.setTimeout(function () {
       // Conditions are re-checked on fire: the visitor may have installed from
@@ -771,11 +812,14 @@
        * route (desktop Firefox, anything unrecognised). Offering an Install
        * button there would be a button that cannot work.
        */
-      if (deferredPrompt || instructionsFor(platform()).length) {
+      // PREVIEW overrides the capability guard too: a merchant on desktop
+      // Firefox still needs to see what their customers will get, and the card
+      // says so itself once it is open.
+      if (PREVIEW || deferredPrompt || instructionsFor(platform()).length) {
         showPrompt();
         if (markSession(SEEN_KEY)) send('shown');
       }
-    }, Math.max(0, CFG.install.delaySeconds) * 1000);
+    }, delay);
   }
 
   function bindTriggers() {

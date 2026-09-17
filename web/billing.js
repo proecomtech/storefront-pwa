@@ -43,10 +43,40 @@ const PLANS_DIR = path.join(settingsStore.DATA_DIR, 'plans');
 
 fs.mkdirSync(PLANS_DIR, { recursive: true });
 
-/** The app's handle, as it appears in the Shopify App Pricing URL. Matches
- *  `handle` in shopify.app.toml; env-overridable so a fork does not have to
- *  patch code to point at its own listing. */
-const APP_HANDLE = process.env.PWA_APP_HANDLE || 'proecomtech-storefront-pwa';
+/**
+ * The app's handle, as it appears in the Shopify App Pricing URL.
+ *
+ * Read from shopify.app.toml rather than repeated here, because the two drifting
+ * apart has no visible symptom on this side: pricingUrl() keeps building a URL
+ * that looks right, and every merchant who clicks a plan lands on Shopify's own
+ * 404 with nothing in this app's log to say why. The handle changing is exactly
+ * the kind of thing that happens during a rename, which is also when nobody is
+ * looking at billing.
+ *
+ * Env wins, so a fork can point at its own listing without patching code.
+ */
+const APP_HANDLE = (function () {
+  const fromEnv = String(process.env.PWA_APP_HANDLE || '').trim();
+  if (fromEnv) return fromEnv;
+
+  // A one-line regex rather than a TOML parser: `handle` is a top-level scalar
+  // in a file this repo owns, and a dependency to read one string is not a
+  // trade worth making.
+  try {
+    const toml = fs.readFileSync(path.join(__dirname, '..', 'shopify.app.toml'), 'utf8');
+    const match = /^\s*handle\s*=\s*["']([^"']+)["']/m.exec(toml);
+    if (match) return match[1].trim();
+    console.warn('shopify.app.toml has no `handle`; plan links will 404 until PWA_APP_HANDLE is set.');
+  } catch (err) {
+    console.warn('could not read shopify.app.toml (' + err.message + '); set PWA_APP_HANDLE so plan links resolve.');
+  }
+
+  return '';
+})();
+
+if (!APP_HANDLE) {
+  console.warn('app handle is empty — Plans > Upgrade will 404. Set PWA_APP_HANDLE to the handle in your Partner dashboard.');
+}
 
 /* --------------------------------------------------- Partner API (optional) */
 

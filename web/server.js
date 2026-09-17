@@ -1,5 +1,5 @@
 /**
- * Storefront PWA — app proxy backend and embedded admin.
+ * Pocketfront PWA — app proxy backend and embedded admin.
  *
  * Two surfaces, with different trust models:
  *
@@ -271,7 +271,7 @@ proxy.get('/pwa.js', (req, res) => {
   if (!s.enabled) {
     cacheFor(res, 60);
     res.type('application/javascript; charset=utf-8');
-    return res.send('/* Storefront PWA is switched off in the app admin. */\n');
+    return res.send('/* Pocketfront PWA is switched off in the app admin. */\n');
   }
 
   const config = {

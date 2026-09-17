@@ -1574,6 +1574,7 @@ function script() {
   var body = document.body;
   var themeEditor = body.getAttribute('data-theme-editor');
   var check = body.getAttribute('data-check');
+  var preview = body.getAttribute('data-preview');
 
   if (themeEditor) {
     var themeLink = el('themeEditorLink');
@@ -1593,6 +1594,18 @@ function script() {
     b.target = '_blank';
     b.rel = 'noopener';
     checkBox.appendChild(b);
+  }
+
+  // _blank, not _top: the merchant is mid-edit on this page and should come back
+  // to it with their unsaved changes intact.
+  if (preview) {
+    var previewBox = el('previewLink');
+    clear(previewBox);
+    var c = node('a', null, 'Preview the card on your storefront');
+    c.href = preview;
+    c.target = '_blank';
+    c.rel = 'noopener';
+    previewBox.appendChild(c);
   }
 
   bindSaveBars();

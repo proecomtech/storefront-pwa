@@ -1,4 +1,4 @@
-# Deploying Storefront PWA to a Hostinger VPS
+# Deploying Pocketfront PWA to a Hostinger VPS
 
 A standalone runbook for putting **this app alone** on a fresh Hostinger VPS.
 
@@ -87,7 +87,7 @@ in a browser.
 Fill in the four values and paste this:
 
 ```text
-Deploy the Storefront PWA Shopify app to my Hostinger VPS by following
+Deploy the Pocketfront PWA Shopify app to my Hostinger VPS by following
 apps/storefront-pwa-live/DEPLOY.md in this repo. Work through steps 3 to 11 only.
 
   VPS        <VPS_IP>, Ubuntu 24.04, root over ssh
@@ -143,7 +143,7 @@ step further down this document explains that step in full — and the
 | Placeholder | Where it comes from |
 |---|---|
 | `<VPS_IP>` | Hostinger panel → your VPS → IPv4 address |
-| `<CLIENT_ID>` | Partner dashboard → Storefront PWA → Client credentials (already in `shopify.app.toml`) |
+| `<CLIENT_ID>` | Partner dashboard → Pocketfront PWA → Client credentials (already in `shopify.app.toml`) |
 | `<CLIENT_SECRET>` | Partner dashboard → same page. Shown there only |
 | `<your-store>` | Your storefront domain, e.g. `www.example.com` |
 
@@ -337,9 +337,9 @@ changing redirect URLs invalidates existing grants. → [detail](#step-8--regist
 
 ### 13 · Turn it on in the store and verify — in the browser
 
-1. **Theme editor → App embeds → enable "Storefront PWA".** Nothing reaches the
+1. **Theme editor → App embeds → enable "Pocketfront PWA".** Nothing reaches the
    storefront until this is on.
-2. **Apps → Storefront PWA** in the Shopify admin. Set the name and short name,
+2. **Apps → Pocketfront PWA** in the Shopify admin. Set the name and short name,
    upload a square logo of 512×512 or larger, save.
 3. Open `https://<your-store>/apps/pwa/check` **on the storefront**, not in the
    admin iframe.
@@ -568,7 +568,7 @@ chown root:gaapps /etc/gaapps/storefront-pwa-live.env
 chmod 640 /etc/gaapps/storefront-pwa-live.env
 ```
 
-Fill in both Shopify values from **Partner dashboard → Apps → Storefront PWA →
+Fill in both Shopify values from **Partner dashboard → Apps → Pocketfront PWA →
 Client credentials**. The annotated template, with the reasoning behind each
 value, is at [`deploy/env/storefront-pwa-live.env.example`](../../deploy/env/storefront-pwa-live.env.example)
 in the workspace.
@@ -687,7 +687,7 @@ workspace. Copy it if you have it; otherwise write it directly:
 ```bash
 cat > /etc/systemd/system/storefront-pwa-live.service <<'EOF'
 [Unit]
-Description=Storefront PWA (Shopify embedded app)
+Description=Pocketfront PWA (Shopify embedded app)
 Documentation=https://pwa.proecomtech.com/healthz
 After=network-online.target
 Wants=network-online.target
@@ -909,10 +909,10 @@ A 404 on these while `/healthz` works means the `[app_proxy] url` is missing its
 
 Then, in a browser:
 
-1. **Theme editor → App embeds → enable "Storefront PWA".** Nothing appears on
+1. **Theme editor → App embeds → enable "Pocketfront PWA".** Nothing appears on
    the storefront until this is on — it is what puts `<link rel="manifest">` in
    `<head>`.
-2. **Apps → Storefront PWA** in the Shopify admin. It must render inside the
+2. **Apps → Pocketfront PWA** in the Shopify admin. It must render inside the
    iframe, not as a blank panel. Set the name and short name, upload a square
    logo of at least 512×512, save. A blank panel is almost always a missing
    `SHOPIFY_API_KEY` or an `X-Frame-Options` header.
@@ -953,7 +953,7 @@ their customers actually see: a card that offers to install the store.
 
 ### What the admin controls
 
-**Apps → Storefront PWA → Install prompt.**
+**Apps → Pocketfront PWA → Install prompt.**
 
 | Setting | Default | Range |
 |---|---|---|

@@ -116,7 +116,7 @@ function homePage() {
     '<p class="hint">Neither can be done from here — both live in the theme, which this app has no ' +
     'permission to edit.</p>' +
     '<ol style="margin:0;padding-left:20px">' +
-    '<li style="margin-bottom:8px">Turn on the <strong>Storefront PWA</strong> app embed in ' +
+    '<li style="margin-bottom:8px">Turn on the <strong>Pocketfront PWA</strong> app embed in ' +
     '<span id="themeEditorLink">Theme editor &rsaquo; App embeds</span>. Nothing else has any effect until that is on.</li>' +
     '<li>Then <span id="checkLink">open <code>/apps/pwa/check</code> on your storefront</span> ' +
     'to confirm the manifest, the icons and the install path on a real page.</li>' +
@@ -265,6 +265,10 @@ function installMessagePage() {
     '</div>' +
     '<p class="hint" style="margin-top:14px">You can also add <code>data-pwa-install</code> to any ' +
     'element in your theme — a nav link, a footer button — and it will open the same prompt.</p>' +
+    '<div class="banner" style="margin-top:14px" id="previewStrip">' +
+    '<strong>Checking it works?</strong> <span id="previewLink">Open your storefront with ' +
+    '<code>?pwa-preview=1</code></span> and the card appears at once — no delay, and whatever this ' +
+    'browser has dismissed before. Preview is not counted in your analytics.</div>' +
     '</section>' +
 
     saveBar() +
@@ -410,7 +414,7 @@ function settingsPage() {
     'decides whether the tags are on the page at all — that is a theme change, made in the theme ' +
     'editor. The switch below leaves the theme alone and makes the manifest non-installable, which is ' +
     'the one to reach for if something looks wrong on a live store.</p>' +
-    checkbox('enabled', 'Storefront PWA is active — customers can install the store as an app') +
+    checkbox('enabled', 'Pocketfront PWA is active — customers can install the store as an app') +
     '<p class="hint" id="enabledNote" style="margin:0"></p>' +
     '</section>' +
 
@@ -743,18 +747,19 @@ function html(shop, apiKey, planHandle) {
     ? 'https://admin.shopify.com/store/' + escapeHtml(storeHandle) + '/themes/current/editor?context=apps'
     : '';
   const checkLink = shop ? 'https://' + escapeHtml(shop) + '/apps/pwa/check' : '';
+  const previewLink = shop ? 'https://' + escapeHtml(shop) + '/?pwa-preview=1' : '';
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Storefront PWA</title>
+<title>Pocketfront PWA</title>
 ${apiKey ? '<meta name="shopify-api-key" content="' + escapeHtml(apiKey) + '">' : ''}
 ${shop && apiKey ? '<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>' : ''}
 <style>${STYLES}</style>
 </head>
-<body data-shop="${escapeHtml(shop || '')}" data-theme-editor="${themeEditorLink}" data-check="${checkLink}" data-plan-handle="${escapeHtml(planHandle || '')}">
+<body data-shop="${escapeHtml(shop || '')}" data-theme-editor="${themeEditorLink}" data-check="${checkLink}" data-preview="${previewLink}" data-plan-handle="${escapeHtml(planHandle || '')}">
 <div class="shell" id="shell">
   ${sidebar()}
   <button type="button" class="navtoggle" id="navToggle" aria-label="Collapse the menu">&#8249;</button>
