@@ -39,6 +39,15 @@ api_version = "2026-07"
   uri = "/webhooks/app/uninstalled"
   topics = [ "app/uninstalled" ]
 
+  # The three privacy webhooks every public app must answer, whatever it stores.
+  # They live in their own subscription because `compliance_topics` and `topics`
+  # cannot share one block. `shopify app deploy` is what registers these — the
+  # automated review check reads the deployed app version, not this file, so a
+  # change here that has not been deployed still fails the check.
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/compliance"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
 [access_scopes]
 # No Admin API access is needed. Settings live in this app's own store, the
 # manifest is served by the proxy, and the head tags are injected by a theme

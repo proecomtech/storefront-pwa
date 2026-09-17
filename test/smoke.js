@@ -1059,6 +1059,56 @@ async function run() {
   // The other shop's data is untouched by this shop's uninstall.
   ok('another shop keeps its plan',
     (await (await adminFor('cap-test.myshopify.com', '/api/plan')).json()).planId === 'monthly');
+
+  console.log('\n== compliance webhooks ==');
+
+  // Posted the way Shopify posts them: topic in a header, one route for all three.
+  const compliance = (topic, hmacValue) => {
+    const raw = Buffer.from(JSON.stringify({ shop_domain: 'cap-test.myshopify.com', topic }));
+    return fetch(BASE + '/webhooks/compliance', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Hmac-Sha256': hmacValue === undefined
+          ? crypto.createHmac('sha256', API_SECRET).update(raw).digest('base64')
+          : hmacValue,
+        'X-Shopify-Shop-Domain': 'cap-test.myshopify.com',
+        'X-Shopify-Topic': topic,
+      },
+      body: raw,
+    });
+  };
+
+  // This loop is the automated review check reproduced: a wrong signature has to
+  // be rejected on every compliance topic, not only on the one that deletes.
+  for (const topic of ['customers/data_request', 'customers/redact', 'shop/redact']) {
+    res = await compliance(topic, 'wrong');
+    ok(topic + ' with a bad HMAC is 401', res.status === 401, 'got ' + res.status);
+  }
+  ok('and a rejected shop/redact deletes nothing',
+    fs.existsSync(path.join(DATA_DIR, 'plans', 'cap-test.myshopify.com.json')));
+
+  res = await compliance('customers/data_request');
+  const dataRequest = await res.json();
+  ok('a valid customers/data_request is 200', res.status === 200, 'got ' + res.status);
+  ok('and reports that no customer data is held', dataRequest.customer_data_stored === false);
+
+  res = await compliance('customers/redact');
+  ok('a valid customers/redact is 200', res.status === 200, 'got ' + res.status);
+  // The redact topics are about customers; the shop's own records stay put.
+  ok('and leaves the shop own records alone',
+    fs.existsSync(path.join(DATA_DIR, 'plans', 'cap-test.myshopify.com.json')));
+
+  res = await compliance('shop/redact');
+  ok('a valid shop/redact is 200', res.status === 200, 'got ' + res.status);
+  ok('and erases that shop',
+    !fs.existsSync(path.join(DATA_DIR, 'plans', 'cap-test.myshopify.com.json')) &&
+    !fs.existsSync(path.join(DATA_DIR, 'shops', 'cap-test.myshopify.com.json')));
+
+  // Shopify retries a non-2xx for 48 hours, so a shop that is already gone — the
+  // normal case, since app/uninstalled ran 48 hours earlier — is still a 200.
+  res = await compliance('shop/redact');
+  ok('a repeat shop/redact is still 200', res.status === 200, 'got ' + res.status);
 }
 
 const server = spawn(process.execPath, ['web/server.js'], {

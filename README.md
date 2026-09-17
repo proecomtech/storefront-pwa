@@ -556,6 +556,22 @@ with the file — a surviving entry would be flushed straight back onto disk on
 the next timer tick. Leaving a merchant's logo on disk after they remove the app
 is not something to be casual about.
 
+### Compliance webhooks
+
+`/webhooks/compliance` answers all three mandatory privacy topics, behind the
+same HMAC gate as `app/uninstalled`:
+
+| Topic | What happens |
+| --- | --- |
+| `customers/data_request` | 200 with `customer_data_stored: false`. Install events are counted, never attributed — `stats.js` increments a per-day, per-platform integer and writes no customer id, email, IP, order or address — so there is nothing to look up. |
+| `customers/redact` | 200, nothing to erase, for the same reason. |
+| `shop/redact` | Erases the shop outright, the same four files as an uninstall. Sent ~48 hours after uninstall, so it usually finds the work already done; it is the backstop for an `app/uninstalled` that was missed. |
+
+Every branch answers 200 within one tick. Shopify retries a non-2xx for 48 hours
+and treats persistent failure as a compliance breach, so "I hold no such record"
+has to be a 200, not a 404. A bad signature is 401 before any handler runs —
+that rejection is exactly what the automated review check probes.
+
 The counters assume a single process. The app listens on one port on 127.0.0.1
 and is not clustered; two processes sharing a `DATA_DIR` would each hold their
 own copy of a shop's counts and the last flush would win.

@@ -505,29 +505,97 @@ app.use('/pwa/proxy', proxy);
 
 /* --------------------------------------------------------------- webhooks */
 
-/*
- * Mounted before express.json: HMAC verification needs the exact bytes Shopify
- * signed, and a parsed-and-reserialised body is not those bytes.
+/**
+ * Body parser + HMAC gate, in that order, for every webhook route.
+ *
+ * express.raw comes first because the signature covers the exact bytes Shopify
+ * sent; a parsed-and-reserialised body is not those bytes. A request that fails
+ * the check gets 401 and never reaches a handler — this is also precisely what
+ * the automated review check probes, by posting a deliberately wrong signature.
  */
-app.post('/webhooks/app/uninstalled', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
-  if (!auth.verifyWebhook(req.body, req.get('x-shopify-hmac-sha256'))) {
-    return res.status(401).send('invalid hmac');
-  }
+const webhook = [
+  express.raw({ type: 'application/json', limit: '1mb' }),
+  (req, res, next) => {
+    if (!auth.verifyWebhook(req.body, req.get('x-shopify-hmac-sha256'))) {
+      return res.status(401).send('invalid hmac');
+    }
+    req.webhookShop = String(req.get('x-shopify-shop-domain') || '').toLowerCase();
+    req.webhookTopic = String(req.get('x-shopify-topic') || '').toLowerCase();
+    return next();
+  },
+];
 
-  const shop = String(req.get('x-shopify-shop-domain') || '').toLowerCase();
-  if (settingsStore.isValidShop(shop)) {
-    settingsStore.remove(shop);
-    stats.remove(shop);
-    reports.removeShop(shop);
-    // The plan record goes too. Shopify cancels the subscription on uninstall,
-    // so keeping it would mean a merchant who reinstalled next year arrived
-    // already entitled to a plan they had stopped paying for.
-    billing.remove(shop);
+/**
+ * Erase everything the app holds for one shop. Shared by app/uninstalled and
+ * shop/redact, which differ only in when Shopify sends them — the uninstall
+ * arrives at once, the redact 48 hours later — never in what has to go.
+ *
+ * Returns whether the header named a shop at all, not whether anything was
+ * found to delete: every remove() below is already idempotent, so a shop that
+ * was cleared 48 hours ago and one that never existed take the same path.
+ */
+function eraseShop(shop) {
+  if (!settingsStore.isValidShop(shop)) return false;
+  settingsStore.remove(shop);
+  stats.remove(shop);
+  reports.removeShop(shop);
+  billing.remove(shop);
+  return true;
+}
+
+app.post('/webhooks/app/uninstalled', webhook, (req, res) => {
+  const shop = req.webhookShop;
+  // The plan record goes with the rest. Shopify cancels the subscription on
+  // uninstall, so keeping it would mean a merchant who reinstalled next year
+  // arrived already entitled to a plan they had stopped paying for.
+  if (eraseShop(shop)) {
     console.log('uninstalled: removed settings, assets, install counts, reports and plan for ' + shop);
   }
 
   // Always 200 once the HMAC is good. A non-2xx makes Shopify retry, and a
   // retry cannot make an already-deleted shop any more deleted.
+  return res.status(200).send('ok');
+});
+
+/**
+ * The three mandatory privacy webhooks, on one route because Shopify sends the
+ * topic in a header and the work splits cleanly on it.
+ *
+ * What this app actually holds per shop: the PWA settings, the uploaded icon
+ * and its derived sizes, install/dismissal counts, saved reports and the plan
+ * record. Install events are counted, never attributed — no customer id, no
+ * email, no IP, no order or address is written anywhere (see web/stats.js,
+ * which increments a per-day, per-platform integer and nothing else). So the
+ * two customer topics have nothing to look up and nothing to erase, and they
+ * say so rather than pretending to work; shop/redact erases the shop outright.
+ *
+ * Every branch answers 200 within one tick. Shopify retries a non-2xx for 48
+ * hours and treats persistent failure as a compliance breach, so "I had no
+ * such record" must be a 200, not a 404.
+ */
+app.post('/webhooks/compliance', webhook, (req, res) => {
+  const shop = req.webhookShop;
+  const topic = req.webhookTopic;
+
+  if (topic === 'shop/redact') {
+    // Sent ~48 hours after uninstall, by which time app/uninstalled has usually
+    // cleared this shop already and there is nothing left to remove — the
+    // correct outcome, not a failure. If that earlier webhook was ever missed,
+    // this is the backstop that makes the erasure actually happen.
+    if (eraseShop(shop)) console.log('shop/redact: cleared every record for ' + shop);
+    else console.log('shop/redact: ignored, not a shop domain: ' + JSON.stringify(shop));
+    return res.status(200).send('ok');
+  }
+
+  if (topic === 'customers/data_request' || topic === 'customers/redact') {
+    console.log(topic + ': no customer data is stored by this app (' + shop + ')');
+    return res.status(200).json({ shop, topic, customer_data_stored: false });
+  }
+
+  // A signed request for a topic this route was never subscribed to. The
+  // signature was valid, so this is not an attack — 200 and drop it, because a
+  // retry would not produce a topic we understand any better.
+  console.log('compliance webhook: ignoring unexpected topic ' + JSON.stringify(topic) + ' from ' + shop);
   return res.status(200).send('ok');
 });
 
