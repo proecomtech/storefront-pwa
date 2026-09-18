@@ -20,7 +20,7 @@
 # script are all served from there.
 #
 # NOTE: replace client_id below with the Client ID from your Partner dashboard
-# after running `shopify app config link`, and replace pwa.gaapps.cloud if you
+# after running `shopify app config link`, and replace pwa.proecomtech.com if you
 # host this somewhere else.
 
 client_id = "df79c060cb7fb5af791b80105d9decb8"

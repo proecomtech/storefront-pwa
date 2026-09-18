@@ -566,7 +566,7 @@
       </p>
     </div>
     <dl class="facts">
-      <div><dt>Host</dt><dd>pwa.gaapps.cloud</dd></div>
+      <div><dt>Host</dt><dd>pwa.proecomtech.com</dd></div>
       <div><dt>Port</dt><dd>3007 · 127.0.0.1 only</dd></div>
       <div><dt>Code</dt><dd>/opt/gaapps/storefront-pwa-live</dd></div>
       <div><dt>State</dt><dd>/var/lib/gaapps/storefront-pwa-live</dd></div>
@@ -620,7 +620,7 @@
 
       <div class="diagram">
 <pre>browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3007 <span class="dim">(127.0.0.1 only)</span>
-                      pwa.gaapps.cloud       /opt/gaapps/storefront-pwa-live
+                      pwa.proecomtech.com       /opt/gaapps/storefront-pwa-live
                                                      │
                                                      ▼
                                           /var/lib/gaapps/storefront-pwa-live
@@ -702,7 +702,7 @@
         control for the domain, and the Shopify CLI on your workstation
         (<code>npm i -g @shopify/cli</code>).</p>
 
-      <p class="footnote">Replace <code>pwa.gaapps.cloud</code> throughout if you
+      <p class="footnote">Replace <code>pwa.proecomtech.com</code> throughout if you
         are hosting elsewhere — it appears in <code>shopify.app.toml</code>, the
         nginx vhost and the Partner dashboard, and all three must agree.</p>
     </section>
@@ -728,7 +728,7 @@
 apps/storefront-pwa-live/DEPLOY.md in this repo. Work through steps 3 to 11 only.
 
   VPS        <span class="ph">&lt;VPS_IP&gt;</span>, Ubuntu 24.04, root over ssh
-  Hostname   pwa.gaapps.cloud
+  Hostname   pwa.proecomtech.com
   Client ID  <span class="ph">&lt;CLIENT_ID&gt;</span>
   Repo       git@github.com:apps-ideas/storefront-pwa-live.git
 
@@ -738,7 +738,7 @@ How I want this run:
   output. If a Check fails, stop and tell me — do not work around it and
   do not continue to the next step.
 - I have already done steps 1 and 2 (token revoked, DNS pointed). Still
-  confirm DNS with `dig +short pwa.gaapps.cloud` before step 10.
+  confirm DNS with `dig +short pwa.proecomtech.com` before step 10.
 - Ask me for SHOPIFY_API_SECRET when you reach step 6. Do not echo it back
   to me, do not write it anywhere but /etc/gaapps/storefront-pwa-live.env, and do not
   put it in a command line that lands in shell history.
@@ -839,7 +839,7 @@ to do in the Partner dashboard and the theme editor.</code></pre>
 
       <div class="cmd">
         <div class="cmd-head"><span>bash · anywhere</span><button class="copy">Copy</button></div>
-<pre><code>dig +short pwa.gaapps.cloud</code></pre>
+<pre><code>dig +short pwa.proecomtech.com</code></pre>
       </div>
 
       <div class="check">
@@ -1222,14 +1222,14 @@ curl -s localhost:3007/healthz</code></pre>
 
       <div class="cmd">
         <div class="cmd-head"><span>bash · on the VPS as root</span><button class="copy">Copy</button></div>
-<pre><code>cat &gt; /etc/nginx/sites-available/pwa.gaapps.cloud.conf &lt;&lt;'EOF'
+<pre><code>cat &gt; /etc/nginx/sites-available/pwa.proecomtech.com.conf &lt;&lt;'EOF'
 server {
     listen 80;
     listen [::]:80;
-    server_name pwa.gaapps.cloud;
+    server_name pwa.proecomtech.com;
 
-    access_log /var/log/nginx/pwa.gaapps.cloud.access.log;
-    error_log  /var/log/nginx/pwa.gaapps.cloud.error.log;
+    access_log /var/log/nginx/pwa.proecomtech.com.access.log;
+    error_log  /var/log/nginx/pwa.proecomtech.com.error.log;
 
     # Merchants upload a logo and up to two screenshots. The app caps the body
     # at 8 MB in express.raw; keep the two in step or nginx rejects the upload
@@ -1258,7 +1258,7 @@ server {
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/pwa.gaapps.cloud.conf /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/pwa.proecomtech.com.conf /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
 # `ln -sf` creates dangling links without complaining and nginx skips them
@@ -1280,7 +1280,7 @@ nginx -t &amp;&amp; systemctl reload nginx</code></pre>
       <div class="check">
         <span class="lab">Check</span>
         <p>The loop prints nothing, and
-          <code>curl -sI http://pwa.gaapps.cloud/healthz</code> returns 200.</p>
+          <code>curl -sI http://pwa.proecomtech.com/healthz</code> returns 200.</p>
         <p><code>nginx -t</code> passing is <strong>not</strong> sufficient
           evidence on its own — see above.</p>
       </div>
@@ -1303,7 +1303,7 @@ nginx -t &amp;&amp; systemctl reload nginx</code></pre>
       <div class="cmd">
         <div class="cmd-head"><span>bash · on the VPS as root</span><button class="copy">Copy</button></div>
 <pre><code>apt install -y certbot python3-certbot-nginx
-certbot --nginx --agree-tos -m you@example.com --redirect -d pwa.gaapps.cloud
+certbot --nginx --agree-tos -m you@example.com --redirect -d pwa.proecomtech.com
 
 systemctl status certbot.timer     # renewal is automatic</code></pre>
       </div>
@@ -1702,7 +1702,7 @@ journalctl -u storefront-pwa-live -n 30 --no-pager</code></pre>
             <tr><td>Logo upload fails with an HTML parse error</td><td>nginx <code>client_max_body_size</code> below the app's 8 MB cap</td><td>Keep it at <code>9m</code> (step 9)</td></tr>
             <tr><td>Splash images time out on a cold store</td><td><code>sharp</code> rendering 2048×2732 exceeded the proxy timeout</td><td><code>proxy_read_timeout 60s</code>; on 1 GB plans confirm swap exists (step 4)</td></tr>
             <tr><td><code>npm install</code> refuses outright</td><td>Node older than 20, and <code>.npmrc</code> sets <code>engine-strict=true</code></td><td>Install Node 22 (step 3)</td></tr>
-            <tr><td>certbot: "could not find a matching server block"</td><td>Dangling <code>sites-enabled</code> symlink, or DNS not yet resolving</td><td>Run the symlink check in step 9; <code>dig +short pwa.gaapps.cloud</code></td></tr>
+            <tr><td>certbot: "could not find a matching server block"</td><td>Dangling <code>sites-enabled</code> symlink, or DNS not yet resolving</td><td>Run the symlink check in step 9; <code>dig +short pwa.proecomtech.com</code></td></tr>
             <tr><td>PWA silently un-installs for every visitor</td><td><code>PWA_VERIFY_PROXY=true</code> and the signature is failing</td><td>Set it back to <code>false</code>, restart, recheck <code>/apps/pwa/health</code></td></tr>
           </tbody>
         </table>
@@ -1715,7 +1715,7 @@ journalctl -u storefront-pwa-live -f
 journalctl -u storefront-pwa-live --since "10 min ago" --no-pager
 curl -s localhost:3007/healthz
 nginx -t &amp;&amp; systemctl reload nginx
-tail -f /var/log/nginx/pwa.gaapps.cloud.error.log</code></pre>
+tail -f /var/log/nginx/pwa.proecomtech.com.error.log</code></pre>
       </div>
     </section>
 

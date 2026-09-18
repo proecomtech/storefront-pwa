@@ -16,7 +16,7 @@ One Node process. No database, no frontend build step, no Redis, no queue.
 
 ```
 browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3007 (127.0.0.1 only)
-                      pwa.gaapps.cloud       /opt/gaapps/storefront-pwa-live
+                      pwa.proecomtech.com       /opt/gaapps/storefront-pwa-live
                                                      │
                                                      ▼
                                           /var/lib/gaapps/storefront-pwa-live
@@ -31,7 +31,7 @@ browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3007 (127.0.0.1 on
 | Code | `/opt/gaapps/storefront-pwa-live` — replaced on every deploy |
 | State | `/var/lib/gaapps/storefront-pwa-live` — **must survive** a deploy |
 | Secrets | `/etc/gaapps/storefront-pwa-live.env`, `640 root:gaapps` |
-| Hostname | `pwa.gaapps.cloud` |
+| Hostname | `pwa.proecomtech.com` |
 | Build step | none — the admin page is server-rendered |
 
 Two HTTP surfaces on that one port, with different trust models:
@@ -70,7 +70,7 @@ Have these in hand:
 - The Shopify CLI on your workstation (`npm i -g @shopify/cli`), for pushing the
   app config and the theme extension.
 
-Replace `pwa.gaapps.cloud` throughout if you are hosting elsewhere — it appears
+Replace `pwa.proecomtech.com` throughout if you are hosting elsewhere — it appears
 in `shopify.app.toml`, the nginx vhost and the Partner dashboard, and all three
 must agree.
 
@@ -91,7 +91,7 @@ Deploy the Pocketfront PWA Shopify app to my Hostinger VPS by following
 apps/storefront-pwa-live/DEPLOY.md in this repo. Work through steps 3 to 11 only.
 
   VPS        <VPS_IP>, Ubuntu 24.04, root over ssh
-  Hostname   pwa.gaapps.cloud
+  Hostname   pwa.proecomtech.com
   Client ID  <CLIENT_ID>
   Repo       git@github.com:apps-ideas/storefront-pwa-live.git
 
@@ -101,7 +101,7 @@ How I want this run:
   output. If a Check fails, stop and tell me — do not work around it and
   do not continue to the next step.
 - I have already done steps 1 and 2 (token revoked, DNS pointed). Still
-  confirm DNS with `dig +short pwa.gaapps.cloud` before step 10.
+  confirm DNS with `dig +short pwa.proecomtech.com` before step 10.
 - Ask me for SHOPIFY_API_SECRET when you reach step 6. Do not echo it back
   to me, do not write it anywhere but /etc/gaapps/storefront-pwa-live.env, and do not
   put it in a command line that lands in shell history.
@@ -167,7 +167,7 @@ Add one A record: name `pwa`, value `<VPS_IP>`, TTL 300. Add AAAA too if the VPS
 has IPv6.
 
 ```bash
-dig +short pwa.gaapps.cloud
+dig +short pwa.proecomtech.com
 ```
 
 **Check:** it prints `<VPS_IP>`. Do not go past step 9 until it does — certbot
@@ -290,13 +290,13 @@ Write the vhost from [step 7 below](#step-7--nginx-and-tls) (copy the whole
 `cat > /etc/nginx/sites-available/…` block), then:
 
 ```bash
-ln -sf /etc/nginx/sites-available/pwa.gaapps.cloud.conf /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/pwa.proecomtech.com.conf /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 for l in /etc/nginx/sites-enabled/*; do [ -e "$l" ] || echo "BROKEN: $l"; done
 nginx -t && systemctl reload nginx
 ```
 
-**Check:** the loop prints nothing, and `curl -sI http://pwa.gaapps.cloud/healthz`
+**Check:** the loop prints nothing, and `curl -sI http://pwa.proecomtech.com/healthz`
 returns 200. `nginx -t` passing is *not* sufficient — it reports "syntax is ok"
 even when every vhost symlink dangles. → [detail](#step-7--nginx-and-tls)
 
@@ -304,7 +304,7 @@ even when every vhost symlink dangles. → [detail](#step-7--nginx-and-tls)
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx --agree-tos -m you@example.com --redirect -d pwa.gaapps.cloud
+certbot --nginx --agree-tos -m you@example.com --redirect -d pwa.proecomtech.com
 ```
 
 **Check:** `curl -s https://pwa.proecomtech.com/healthz` returns the same JSON as
@@ -321,7 +321,7 @@ console error that never mentions nginx. → [detail](#never-add-x-frame-options
 ### 12 · Register the app with Shopify — on your machine
 
 Confirm `application_url`, `redirect_urls` and `[app_proxy] url` in
-[`shopify.app.toml`](shopify.app.toml) all name `pwa.gaapps.cloud`, and that the
+[`shopify.app.toml`](shopify.app.toml) all name `pwa.proecomtech.com`, and that the
 proxy URL still ends in **`/pwa/proxy`** — without that suffix every storefront
 page links to a 404 manifest. Then, in this directory:
 
@@ -492,7 +492,7 @@ yet point at this box, and failed attempts count against Let's Encrypt's rate
 limit of five failures per hostname per hour.
 
 ```bash
-dig +short pwa.gaapps.cloud     # must return the VPS IP
+dig +short pwa.proecomtech.com     # must return the VPS IP
 ```
 
 Raise the TTL once everything is verified.
@@ -756,18 +756,18 @@ write is landing outside `ReadWritePaths` — recheck `DATA_DIR` in step 4.
 ## Step 7 — nginx and TLS
 
 The annotated vhost is at
-[`deploy/nginx/pwa.gaapps.cloud.conf`](../../deploy/nginx/pwa.gaapps.cloud.conf).
+[`deploy/nginx/pwa.proecomtech.com.conf`](../../deploy/nginx/pwa.proecomtech.com.conf).
 HTTP only here on purpose — `certbot --nginx` adds the TLS block itself:
 
 ```bash
-cat > /etc/nginx/sites-available/pwa.gaapps.cloud.conf <<'EOF'
+cat > /etc/nginx/sites-available/pwa.proecomtech.com.conf <<'EOF'
 server {
     listen 80;
     listen [::]:80;
-    server_name pwa.gaapps.cloud;
+    server_name pwa.proecomtech.com;
 
-    access_log /var/log/nginx/pwa.gaapps.cloud.access.log;
-    error_log  /var/log/nginx/pwa.gaapps.cloud.error.log;
+    access_log /var/log/nginx/pwa.proecomtech.com.access.log;
+    error_log  /var/log/nginx/pwa.proecomtech.com.error.log;
 
     # The app sets its own frame-ancestors CSP naming the requesting shop, so
     # nginx must stay out of the framing decision entirely. See below.
@@ -799,7 +799,7 @@ server {
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/pwa.gaapps.cloud.conf /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/pwa.proecomtech.com.conf /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
 # `ln -sf` creates dangling links without complaining and nginx skips them
@@ -819,7 +819,7 @@ Certificate:
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx --agree-tos -m you@example.com --redirect -d pwa.gaapps.cloud
+certbot --nginx --agree-tos -m you@example.com --redirect -d pwa.proecomtech.com
 
 systemctl status certbot.timer     # renewal is automatic
 ```
@@ -1117,7 +1117,7 @@ merchant's logo.
 | Logo upload fails with an HTML parse error in the admin | nginx `client_max_body_size` below the app's 8 MB cap | Keep it at `9m` (step 7) |
 | Splash images time out on a cold store | `sharp` rendering 2048×2732 exceeded the proxy timeout | `proxy_read_timeout 60s`; on 1 GB plans confirm swap exists (step 1) |
 | `npm install` refuses outright | Node older than 20, and `.npmrc` sets `engine-strict=true` | Install Node 22 (step 1) |
-| certbot: "could not find a matching server block" | Dangling `sites-enabled` symlink, or DNS not yet resolving | Run the symlink check in step 7; `dig +short pwa.gaapps.cloud` |
+| certbot: "could not find a matching server block" | Dangling `sites-enabled` symlink, or DNS not yet resolving | Run the symlink check in step 7; `dig +short pwa.proecomtech.com` |
 | PWA silently un-installs for every visitor | `PWA_VERIFY_PROXY=true` and the signature is failing | Set it back to `false`, restart, recheck `/apps/pwa/health` |
 
 Useful one-liners:
@@ -1128,7 +1128,7 @@ journalctl -u storefront-pwa-live -f
 journalctl -u storefront-pwa-live --since "10 min ago" --no-pager
 curl -s localhost:3007/healthz
 nginx -t && systemctl reload nginx
-tail -f /var/log/nginx/pwa.gaapps.cloud.error.log
+tail -f /var/log/nginx/pwa.proecomtech.com.error.log
 ```
 
 ---
@@ -1145,5 +1145,5 @@ done. What remains:
 3. Clone into `/opt/gaapps/storefront-pwa-live` (step 3), write
    `/etc/gaapps/storefront-pwa-live.env` (step 4), `npm install` (step 5).
 4. Unit and vhost from `deploy/` (steps 6–7).
-5. `certbot --nginx -d pwa.gaapps.cloud --expand` to add the name to the
+5. `certbot --nginx -d pwa.proecomtech.com --expand` to add the name to the
    existing certificate rather than issuing a second one.
