@@ -129,7 +129,7 @@ function homePage() {
     '<h2>Where to go</h2>' +
     '<p class="hint">What each page changes.</p>' +
     '<table class="what2">' +
-    '<tr><td><a href="#/configuration">Configuration</a></td><td>The app\'s name, icon and colours — what a customer sees on their home screen.</td></tr>' +
+    '<tr><td><a href="#/configuration">Configuration</a></td><td>The app\'s name, icon and colors — what a customer sees on their home screen.</td></tr>' +
     '<tr><td><a href="#/install-message">Install message</a></td><td>The card that invites customers to install, and what it says.</td></tr>' +
     '<tr><td><a href="#/cache-assets">Cache assets</a></td><td>What the service worker keeps, and the list it fetches ahead of time.</td></tr>' +
     '<tr><td><a href="#/offline-page">Offline page</a></td><td>What a customer sees with no connection.</td></tr>' +
@@ -148,7 +148,7 @@ function configurationPage() {
   ];
 
   return page('configuration', 'Configuration',
-    'How your store looks as an installed app — its name, its icon and the colours it launches in.',
+    'How your store looks as an installed app — its name, its icon and the colors it launches in.',
     '<div class="split">' +
     '<div>' +
 
@@ -189,11 +189,11 @@ function configurationPage() {
     '<h2>Splash screen</h2>' +
     '<p class="hint">The window a customer sees before your storefront has painted.</p>' +
     '<div class="grid">' +
-    colorField('themeColor', 'Theme colour',
-      'Tints the title bar and the Android status bar, and is the install button\'s default colour.') +
-    colorField('backgroundColor', 'Background colour',
+    colorField('themeColor', 'Theme color',
+      'Tints the title bar and the Android status bar, and is the install button\'s default color.') +
+    colorField('backgroundColor', 'Background color',
       'The splash screen while the store loads, and the padding around the Android icon. ' +
-      'Match your storefront background, not your brand colour.') +
+      'Match your storefront background, not your brand color.') +
     '</div>' +
     '</section>' +
 
@@ -245,8 +245,8 @@ function installMessagePage() {
     '<h2>Button</h2>' +
     '<div class="grid">' +
     field('installButtonLabel', 'Install button text', counted('installButtonLabel', 24, 'Install')) +
-    colorField('installButtonFg', 'Button text colour', 'Leave blank to pick black or white automatically.') +
-    colorField('installButtonBg', 'Button background colour', 'Leave blank to use your theme colour.') +
+    colorField('installButtonFg', 'Button text color', 'Leave blank to pick black or white automatically.') +
+    colorField('installButtonBg', 'Button background color', 'Leave blank to use your theme color.') +
     '</div>' +
     '</section>' +
 
@@ -472,7 +472,7 @@ function settingsPage() {
     '<h2>iOS</h2>' +
     '<p class="hint">Safari ignores most of the manifest and uses its own tags, so these are separate ' +
     'settings rather than duplicates.</p>' +
-    checkbox('iosSplash', 'Generate iOS launch screens (nineteen sizes, from your icon and background colour)') +
+    checkbox('iosSplash', 'Generate iOS launch screens (nineteen sizes, from your icon and background color)') +
     field('iosStatusBarStyle', 'Status bar style', select('iosStatusBarStyle', [
       ['default', 'Default — dark text on light'],
       ['black', 'Black'],
@@ -631,7 +631,7 @@ function plansPage() {
     '<table class="what2">' +
     '<tr><td>The PWA itself</td><td>The manifest, the icons, the iOS launch screens, the offline page ' +
     'and the service worker. A store on the free plan is as installable as one on a paid plan.</td></tr>' +
-    '<tr><td>Configuration</td><td>Name, logo, colours, install message, cache rules, shortcuts, ' +
+    '<tr><td>Configuration</td><td>Name, logo, colors, install message, cache rules, shortcuts, ' +
     'screenshots and the offline page. The one control held back is the precache file list.</td></tr>' +
     '<tr><td>Help &amp; support</td><td>The quick setup wizard, which checks your live storefront, and ' +
     'the FAQs.</td></tr>' +

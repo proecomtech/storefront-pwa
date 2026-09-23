@@ -312,7 +312,7 @@ async function run() {
   const m2 = await res.json();
   ok('the manifest reflects the saved name', m2.name === 'Demo Store', m2.name);
   ok('the manifest reflects the saved shortcut', (m2.shortcuts || []).length === 1);
-  ok('the manifest theme colour is saved', m2.theme_color === '#0a5c36', m2.theme_color);
+  ok('the manifest theme color is saved', m2.theme_color === '#0a5c36', m2.theme_color);
 
   console.log('\n== master switch ==');
 
@@ -387,7 +387,7 @@ async function run() {
   res = await fetch(proxyUrl('/manifest.json'));
   const m3 = await res.json();
   // The URL rev is renderRev, not the upload's own hash: it also covers the
-  // colours the maskable and splash renders are drawn from. So assert that it
+  // colors the maskable and splash renders are drawn from. So assert that it
   // moved, not what it equals.
   ok('uploading an icon changes every icon URL',
     m3.icons[0].src !== manifest.icons[0].src, m3.icons[0].src);
@@ -406,12 +406,12 @@ async function run() {
   res = await admin('/api/assets/nonsense', { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: logo });
   ok('an unknown asset kind is rejected', res.status === 400, 'got ' + res.status);
 
-  console.log('\n== colour changes bust the year-long icon cache ==');
+  console.log('\n== color changes bust the year-long icon cache ==');
 
-  // The maskable icons are padded with the background colour and the splash
-  // screens are drawn on it, so a colour change must move their URLs — they are
+  // The maskable icons are padded with the background color and the splash
+  // screens are drawn on it, so a color change must move their URLs — they are
   // served immutable for a year and there is no other way to flush them.
-  const beforeColour = await (await fetch(proxyUrl('/manifest.json'))).json();
+  const beforecolor = await (await fetch(proxyUrl('/manifest.json'))).json();
   const beforePwa = await (await fetch(proxyUrl('/pwa.js'))).text();
 
   res = await admin('/api/settings', {
@@ -419,19 +419,19 @@ async function run() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(Object.assign({}, backOn.settings, { backgroundColor: '#123456' })),
   });
-  ok('the background colour saves', (await res.json()).settings.backgroundColor === '#123456');
+  ok('the background color saves', (await res.json()).settings.backgroundColor === '#123456');
 
-  const afterColour = await (await fetch(proxyUrl('/manifest.json'))).json();
+  const aftercolor = await (await fetch(proxyUrl('/manifest.json'))).json();
   const afterPwa = await (await fetch(proxyUrl('/pwa.js'))).text();
 
-  ok('the maskable icon URL changes with the background colour',
-    beforeColour.icons[1].src !== afterColour.icons[1].src, afterColour.icons[1].src);
+  ok('the maskable icon URL changes with the background color',
+    beforecolor.icons[1].src !== aftercolor.icons[1].src, aftercolor.icons[1].src);
   ok('the splash URLs in pwa.js change too',
     beforePwa !== afterPwa && afterPwa.includes('/splash-'));
-  ok('background_color is reflected in the manifest', afterColour.background_color === '#123456');
+  ok('background_color is reflected in the manifest', aftercolor.background_color === '#123456');
 
   res = await fetch(proxyUrl('/icon-192-maskable.png'));
-  ok('the recoloured maskable icon renders', res.status === 200 && isPng(Buffer.from(await res.arrayBuffer())));
+  ok('the recolored maskable icon renders', res.status === 200 && isPng(Buffer.from(await res.arrayBuffer())));
 
   console.log('\n== forcing a refresh ==');
 
@@ -482,7 +482,7 @@ async function run() {
     res.status === 200 && isPng(Buffer.from(await res.arrayBuffer())), 'status ' + res.status);
 
   // Nothing the merchant chose may move: a refresh is a cache operation, not an
-  // edit, and a button that quietly reset a colour would be worse than no
+  // edit, and a button that quietly reset a color would be worse than no
   // button at all.
   ok('the merchant’s own settings are untouched',
     refreshed.settings.name === backOn.settings.name &&
@@ -629,10 +629,10 @@ async function run() {
   res = await fetch(proxyUrl('/pwa.js'));
   const withCard = await res.text();
   ok('the storefront script carries the benefit lines', withCard.includes('"Exclusive discounts"'));
-  ok('and the button colours it should paint',
+  ok('and the button colors it should paint',
     withCard.includes('"buttonBackgroundColor":"#000000"') && withCard.includes('"buttonTextColor":"#ffffff"'));
 
-  // Blank means "follow the theme colour", and the pair has to be resolved
+  // Blank means "follow the theme color", and the pair has to be resolved
   // before it reaches a browser — a blank in the CSS would be no button at all.
   await admin('/api/settings', {
     method: 'POST',
@@ -640,10 +640,10 @@ async function run() {
     body: JSON.stringify({ themeColor: '#0b5fff', install: { buttonBackgroundColor: '', buttonTextColor: '' } }),
   });
   const themed = await (await fetch(proxyUrl('/pwa.js'))).text();
-  ok('an unset button colour falls back to the theme colour',
-    themed.includes('"buttonBackgroundColor":"#0b5fff"'), 'theme colour not applied');
-  ok('and gets a label colour chosen for legibility',
-    themed.includes('"buttonTextColor":"#ffffff"'), 'label colour not derived');
+  ok('an unset button color falls back to the theme color',
+    themed.includes('"buttonBackgroundColor":"#0b5fff"'), 'theme color not applied');
+  ok('and gets a label color chosen for legibility',
+    themed.includes('"buttonTextColor":"#ffffff"'), 'label color not derived');
 
   console.log('\n== offline page ==');
 

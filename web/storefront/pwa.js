@@ -324,7 +324,7 @@
   function applyHeadTags() {
     var p = platform();
 
-    // The theme colour tints the Android address bar and the iOS status bar.
+    // The theme color tints the Android address bar and the iOS status bar.
     // Only added when the theme has not set one of its own.
     ensureMeta('theme-color', CFG.themeColor);
 
@@ -482,7 +482,7 @@
       '.btn {',
       '  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;',
       '  padding: 7px 14px; border-radius: 8px; border: 0;',
-      // Resolved on the server: blank settings fall back to the theme colour
+      // Resolved on the server: blank settings fall back to the theme color
       // with a label picked for legibility against it. See installButtonColors.
       '  background: ' + CFG.install.buttonBackgroundColor + '; color: ' + CFG.install.buttonTextColor + ';',
       '}',

@@ -134,7 +134,7 @@ function defaults(shop) {
       // small card rather than a padded one.
       benefits: [],
 
-      // Empty means "follow the theme colour, with a legible label picked for
+      // Empty means "follow the theme color, with a legible label picked for
       // it". Only a merchant who sets both is taken at their word — see
       // installButtonColors in manifest-free server code (server.js) for how
       // the pair is resolved.

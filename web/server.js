@@ -96,12 +96,12 @@ function readableOn(hex) {
 }
 
 /**
- * The install button's background and label colours, with the blanks filled in.
+ * The install button's background and label colors, with the blanks filled in.
  *
  * Either may be left empty in the admin, and empty means "follow the theme
- * colour" rather than "black". A merchant who sets only the background gets a
+ * color" rather than "black". A merchant who sets only the background gets a
  * label picked for legibility against it, which is the case worth getting right
- * — a dark brand colour with the default dark label is an invisible button, and
+ * — a dark brand color with the default dark label is an invisible button, and
  * it would be invisible only once it was live.
  */
 function installButtonColors(settings) {
@@ -288,8 +288,8 @@ proxy.get('/pwa.js', (req, res) => {
       statusBarStyle: s.ios.statusBarStyle,
       splash: manifestBuilder.iosSplashLinks(s, req.proxyBase),
     },
-    // The button's two colours are resolved here rather than on the storefront.
-    // Blank means "follow the theme colour", and working that out needs the
+    // The button's two colors are resolved here rather than on the storefront.
+    // Blank means "follow the theme color", and working that out needs the
     // luminance check below — which is worth doing once per request on a server
     // instead of on every page view in every visitor's browser.
     install: {
@@ -694,7 +694,7 @@ app.post('/api/settings', auth.requireSession, (req, res) => {
   }
 
   // Bumping the cache version on every save would discard a returning
-  // visitor's cache for a colour change. Only the things the worker actually
+  // visitor's cache for a color change. Only the things the worker actually
   // bakes in warrant it — the cache rules and the precache list among them,
   // because a merchant who has just switched image caching off means "stop
   // serving those from cache", not "stop adding new ones".
@@ -708,7 +708,7 @@ app.post('/api/settings', auth.requireSession, (req, res) => {
 
   const saved = settingsStore.write(req.shop, settings);
 
-  // The colours and the store's initial are baked into the maskable icons, the
+  // The colors and the store's initial are baked into the maskable icons, the
   // splash screens and the placeholder icon, so a change to any of them means
   // the renders on disk are stale. Their URLs change with them (renderRev
   // covers the same inputs), so this is only housekeeping — without it the

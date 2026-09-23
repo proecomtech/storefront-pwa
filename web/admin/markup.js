@@ -128,7 +128,7 @@ function saveBar() {
  * Sidebar icons.
  *
  * Inline SVG, 20-unit box, stroked in currentColor so they take the sidebar's
- * colour and its active state without a second rule. Drawn here rather than
+ * color and its active state without a second rule. Drawn here rather than
  * pulled from an icon package because five hundred bytes of path data is
  * cheaper than a dependency this app would otherwise not have.
  */

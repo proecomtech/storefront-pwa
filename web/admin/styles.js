@@ -214,7 +214,7 @@ const STYLES = `
   .fakebar.w60 { width:60%; } .fakebar.w40 { width:40%; } .fakebar.w80 { width:80%; }
   .fakeblock { flex:1 1 auto; border-radius:6px; background:rgba(128,128,128,.14); }
 
-  /* The install card, drawn with the merchant's own colours and copy. */
+  /* The install card, drawn with the merchant's own colors and copy. */
   .cardpreview { position:absolute; left:8px; right:8px; bottom:8px; border-radius:11px;
     padding:9px 10px; font-size:9px; line-height:1.45; box-shadow:0 6px 18px rgba(0,0,0,.28);
     border:1px solid rgba(128,128,128,.3); }

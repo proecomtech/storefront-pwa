@@ -178,7 +178,7 @@ this is on: it is what puts `<link rel="manifest">` in `<head>`.
 ### 4. Configure
 
 Apps → Pocketfront PWA. Set the name and short name, upload a square logo of at
-least 512×512, and set the theme and background colours. Everything else has a
+least 512×512, and set the theme and background colors. Everything else has a
 working default.
 
 Until a logo is uploaded the app generates a placeholder icon from the store's
@@ -189,8 +189,8 @@ The admin is ten pages behind a sidebar:
 | Page | What it does |
 |---|---|
 | **Home** | The install figures, the two theme steps the app cannot do for you, and where to go for everything else. |
-| **Configuration** | Name, short name, description, logo, theme and background colours — with a live phone preview of the home screen and the splash screen. |
-| **Install message** | The invitation card: title, up to five benefit bullets, body copy, button label and its two colours, delay, position, dismissal period. Previews as Android and as iOS, which differ because Safari has no install dialog to open. |
+| **Configuration** | Name, short name, description, logo, theme and background colors — with a live phone preview of the home screen and the splash screen. |
+| **Install message** | The invitation card: title, up to five benefit bullets, body copy, button label and its two colors, delay, position, dismissal period. Previews as Android and as iOS, which differ because Safari has no install dialog to open. |
 | **Cache assets** | What the service worker keeps (home page, Google Fonts, storefront pages, CSS/JS, images), the precache list — a paid control, shown disabled on Free — and the forced-refresh block. |
 | **Offline page** | The title and message shown with no connection, previewed on a phone. |
 | **Settings** | Launch behaviour, shortcuts, language and categories, iOS, install-dialog screenshots, the service worker toggle, and the master switch. |
@@ -260,7 +260,7 @@ manifest and a second copy of those values in the theme editor would drift from
 it within a week. The **theme app embed** only decides whether and where the PWA
 loads, which is a theme decision.
 
-The one deliberate exception is the theme colour override in the block:
+The one deliberate exception is the theme color override in the block:
 `<meta name="theme-color">` has to be in the HTML at first paint to tint the
 address bar before any script runs. Left blank — the default — the runtime
 injects the admin's value, and it never overwrites a `theme-color` the theme
@@ -455,7 +455,7 @@ that moves with the reader is worse than one that is stated. Buckets are kept fo
 | `manifest.json` | `max-age=300` | Short enough that a renamed app appears within a coffee break. |
 | `pwa.js` | `max-age=600` | Config is baked in, so it must not be pinned for long. |
 | `sw.js` | `no-cache` | A long-cached service worker is a fix you cannot ship. |
-| icons, splash, screenshots | `max-age=31536000, immutable` | Content-addressed by `?v=<rev>`. The rev hashes the upload *and* the colours and initial that the maskable, splash and placeholder renders are drawn from, so changing any of them changes every URL. |
+| icons, splash, screenshots | `max-age=31536000, immutable` | Content-addressed by `?v=<rev>`. The rev hashes the upload *and* the colors and initial that the maskable, splash and placeholder renders are drawn from, so changing any of them changes every URL. |
 | `/offline`, `/check`, `/health` | `no-store` | A CDN copy of "you are offline" served to an online visitor is memorable. |
 | `/event` | `no-store`, POST only | A cacheable GET would have the edge answering the second install of the day and never reaching the counter. |
 
@@ -525,7 +525,7 @@ Boots the real server on a scratch `DATA_DIR` and makes 135 assertions across
 both surfaces: manifest shape and the same-origin `start_url` rule, icon and
 splash rendering, the size allow-lists, session-token rejection (no token, wrong
 secret, expired, wrong `aud`), settings coercion, the master switch, icon upload
-limits, cache-busting on a colour change and on a forced refresh, the install
+limits, cache-busting on a color change and on a forced refresh, the install
 counters and their event allow-list, and the uninstall webhook's HMAC and data
 deletion.
 
@@ -539,9 +539,9 @@ both would have reached a storefront silently:
   stayed a bare identifier. The result was valid JavaScript that threw
   `ReferenceError` on the first line of every storefront page. `loadTemplate` in
   `web/server.js` now refuses to boot if the token is not unique.
-- **A colour change must move every icon URL.** Derived renders are served
+- **A color change must move every icon URL.** Derived renders are served
   `immutable` for a year but were keyed only on the uploaded file's hash, so
-  changing the background colour — which pads the maskable icons and paints the
+  changing the background color — which pads the maskable icons and paints the
   splash screens — would have served stale renders forever.
 
 ## Data

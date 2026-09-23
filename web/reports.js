@@ -439,7 +439,7 @@ function pwaChecksFor(settings, storefront) {
       Boolean(manifest.start_url && manifest.scope && String(manifest.start_url).startsWith(manifest.scope)),
       manifest.start_url ? manifest.start_url + ' in ' + manifest.scope : 'Set these on the Settings page.'),
 
-    check('Theme and background colours', Boolean(manifest.theme_color && manifest.background_color),
+    check('Theme and background colors', Boolean(manifest.theme_color && manifest.background_color),
       manifest.theme_color
         ? manifest.theme_color + ' / ' + manifest.background_color
         : 'Set these on the Configuration page.'),

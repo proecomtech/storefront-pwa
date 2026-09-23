@@ -533,8 +533,8 @@ function script() {
   }
 
   /* The install card, drawn from the same values the storefront script is
-   * handed — including the blank-means-theme-colour rule, so a merchant who
-   * leaves both colour fields empty sees here what a customer will see. */
+   * handed — including the blank-means-theme-color rule, so a merchant who
+   * leaves both color fields empty sees here what a customer will see. */
   function installCard() {
     var bg = value('backgroundColor') || '#ffffff';
     var buttonBg = value('installButtonBg') || value('themeColor') || '#111111';
@@ -926,7 +926,7 @@ function script() {
       : entry.installsPerMonth + ' installs a month');
     list.appendChild(installs);
 
-    list.appendChild(node('li', null, 'Name, logo, colours, install message'));
+    list.appendChild(node('li', null, 'Name, logo, colors, install message'));
     list.appendChild(node('li', null, 'Offline page and cache rules'));
     list.appendChild(node('li', null, 'Quick setup wizard and FAQs'));
     list.appendChild(node('li', entry.precache ? null : 'no', 'Precache file list'));
@@ -1121,11 +1121,11 @@ function script() {
    * there is no second palette to keep in step with the stylesheet. */
   function dial(label, n) {
     var wrap = node('div', 'dial');
-    var colour = n == null ? '#9aa0a6' : (n >= 90 ? '#0c8a5f' : (n >= 50 ? '#d69e2e' : '#c0392b'));
+    var color = n == null ? '#9aa0a6' : (n >= 90 ? '#0c8a5f' : (n >= 50 ? '#d69e2e' : '#c0392b'));
 
     var ring = node('div', 'ring');
-    ring.style.background = 'conic-gradient(' + colour + ' ' + (n || 0) + '%, rgba(128,128,128,.22) 0)';
-    ring.style.color = colour;
+    ring.style.background = 'conic-gradient(' + color + ' ' + (n || 0) + '%, rgba(128,128,128,.22) 0)';
+    ring.style.color = color;
 
     var inner = node('i', null, n == null ? '\\u2013' : String(n));
     ring.appendChild(inner);
