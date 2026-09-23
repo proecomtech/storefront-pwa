@@ -543,14 +543,46 @@ function eraseShop(shop) {
   return true;
 }
 
+/**
+ * Answer Shopify first; erase once the response is off the socket.
+ *
+ * Shopify allows a webhook endpoint about five seconds and records anything
+ * slower as "No response from app" — which on a compliance topic is held
+ * against the app even though the erasure itself would have succeeded. The
+ * erasure is local disk, and one part of it is not bounded: settingsStore.remove
+ * does a recursive, *synchronous* fs.rmSync over the shop's asset directory,
+ * which holds the uploaded icon plus every derived render — twelve icon sizes
+ * and twenty iOS splash screens, the largest of them 2048x2732. That is
+ * milliseconds on an idle box and something else entirely on a 1 GB VPS that is
+ * swapping because sharp is rendering one of those splashes for another shop.
+ * Leaving it inside the five second budget makes the reply time a function of
+ * how busy the image pipeline happens to be.
+ *
+ * Deferring costs nothing. Every remove() is idempotent and none of them can
+ * fail in a way a Shopify retry would repair, so there is no outcome worth
+ * reporting in the status code — the 200 only ever meant "received". If the
+ * process dies in the gap, app/uninstalled and the next shop/redact are each
+ * still a backstop for the other.
+ *
+ * 'close' rather than 'finish' on purpose: it fires both on a completed
+ * response and on one whose connection was cut, and the obligation to erase
+ * does not depend on Shopify having heard the answer.
+ */
+function eraseWhenSent(res, shop, topic) {
+  res.on('close', () => {
+    if (eraseShop(shop)) {
+      console.log(topic + ': removed settings, assets, install counts, reports and plan for ' + shop);
+    } else {
+      console.log(topic + ': ignored, not a shop domain: ' + JSON.stringify(shop));
+    }
+  });
+}
+
 app.post('/webhooks/app/uninstalled', webhook, (req, res) => {
-  const shop = req.webhookShop;
   // The plan record goes with the rest. Shopify cancels the subscription on
   // uninstall, so keeping it would mean a merchant who reinstalled next year
   // arrived already entitled to a plan they had stopped paying for.
-  if (eraseShop(shop)) {
-    console.log('uninstalled: removed settings, assets, install counts, reports and plan for ' + shop);
-  }
+  eraseWhenSent(res, req.webhookShop, 'uninstalled');
 
   // Always 200 once the HMAC is good. A non-2xx makes Shopify retry, and a
   // retry cannot make an already-deleted shop any more deleted.
@@ -569,9 +601,11 @@ app.post('/webhooks/app/uninstalled', webhook, (req, res) => {
  * two customer topics have nothing to look up and nothing to erase, and they
  * say so rather than pretending to work; shop/redact erases the shop outright.
  *
- * Every branch answers 200 within one tick. Shopify retries a non-2xx for 48
- * hours and treats persistent failure as a compliance breach, so "I had no
- * such record" must be a 200, not a 404.
+ * Every branch answers 200 without touching the disk first — shop/redact hands
+ * its erasure to eraseWhenSent, so the reply goes out in the same tick the
+ * request arrived in. Shopify retries a non-2xx for 48 hours and treats
+ * persistent failure as a compliance breach, so "I had no such record" must be
+ * a 200, not a 404.
  */
 app.post('/webhooks/compliance', webhook, (req, res) => {
   const shop = req.webhookShop;
@@ -582,8 +616,7 @@ app.post('/webhooks/compliance', webhook, (req, res) => {
     // cleared this shop already and there is nothing left to remove — the
     // correct outcome, not a failure. If that earlier webhook was ever missed,
     // this is the backstop that makes the erasure actually happen.
-    if (eraseShop(shop)) console.log('shop/redact: cleared every record for ' + shop);
-    else console.log('shop/redact: ignored, not a shop domain: ' + JSON.stringify(shop));
+    eraseWhenSent(res, shop, 'shop/redact');
     return res.status(200).send('ok');
   }
 

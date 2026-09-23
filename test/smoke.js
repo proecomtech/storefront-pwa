@@ -55,6 +55,25 @@ function sessionToken(overrides) {
   return header + '.' + payload + '.' + sig;
 }
 
+/**
+ * Wait for a condition the server reaches just after it answers.
+ *
+ * The webhook routes acknowledge Shopify and then erase, so the fetch resolving
+ * says the 200 was sent, not that the files are gone yet (web/server.js,
+ * eraseWhenSent). Polling is what the assertion actually means — "this is gone
+ * shortly after the webhook" — and a fixed sleep would either be flaky on a
+ * loaded machine or slow on an idle one. Returns false on timeout so the caller
+ * still reports a real failure rather than hanging.
+ */
+async function eventually(condition, timeoutMs) {
+  const deadline = Date.now() + (timeoutMs || 5000);
+  for (;;) {
+    if (condition()) return true;
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
 function proxyUrlFor(shop, p) {
   return BASE + '/pwa/proxy' + p + (p.includes('?') ? '&' : '?') +
     'shop=' + shop + '&path_prefix=%2Fapps%2Fpwa';
@@ -1070,8 +1089,10 @@ async function run() {
     body: payload,
   });
   ok('a valid uninstall webhook is 200', res.status === 200, 'got ' + res.status);
-  ok('settings are deleted on uninstall', !fs.existsSync(path.join(DATA_DIR, 'shops', SHOP + '.json')));
-  ok('uploaded assets are deleted on uninstall', !fs.existsSync(path.join(DATA_DIR, 'assets', SHOP)));
+  ok('settings are deleted on uninstall',
+    await eventually(() => !fs.existsSync(path.join(DATA_DIR, 'shops', SHOP + '.json'))));
+  ok('uploaded assets are deleted on uninstall',
+    await eventually(() => !fs.existsSync(path.join(DATA_DIR, 'assets', SHOP))));
 
   // Asserted through the API rather than off the disk: the counts are held in
   // memory between flushes, so a file that is absent proves nothing. What has
@@ -1081,13 +1102,14 @@ async function run() {
   ok('install counts are deleted on uninstall',
     afterUninstall.totals.installed === 0 && afterUninstall.lastEventAt === null,
     JSON.stringify(afterUninstall.totals));
-  ok('the stats file is gone too', !fs.existsSync(path.join(DATA_DIR, 'stats', SHOP + '.json')));
+  ok('the stats file is gone too',
+    await eventually(() => !fs.existsSync(path.join(DATA_DIR, 'stats', SHOP + '.json'))));
 
   // Shopify cancels the subscription on uninstall. Keeping the plan record
   // would mean a merchant reinstalling next year arrived already entitled to a
   // plan they had stopped paying for.
   ok('the plan record is deleted on uninstall',
-    !fs.existsSync(path.join(DATA_DIR, 'plans', SHOP + '.json')));
+    await eventually(() => !fs.existsSync(path.join(DATA_DIR, 'plans', SHOP + '.json'))));
   ok('and a reinstalled shop is back on the free plan',
     (await (await admin('/api/plan')).json()).planId === 'free');
   // The other shop's data is untouched by this shop's uninstall.
@@ -1136,8 +1158,9 @@ async function run() {
   res = await compliance('shop/redact');
   ok('a valid shop/redact is 200', res.status === 200, 'got ' + res.status);
   ok('and erases that shop',
-    !fs.existsSync(path.join(DATA_DIR, 'plans', 'cap-test.myshopify.com.json')) &&
-    !fs.existsSync(path.join(DATA_DIR, 'shops', 'cap-test.myshopify.com.json')));
+    await eventually(() =>
+      !fs.existsSync(path.join(DATA_DIR, 'plans', 'cap-test.myshopify.com.json')) &&
+      !fs.existsSync(path.join(DATA_DIR, 'shops', 'cap-test.myshopify.com.json'))));
 
   // Shopify retries a non-2xx for 48 hours, so a shop that is already gone — the
   // normal case, since app/uninstalled ran 48 hours earlier — is still a 200.
