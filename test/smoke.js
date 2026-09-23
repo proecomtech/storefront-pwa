@@ -1064,6 +1064,27 @@ async function run() {
     adminHtml.includes('src="/admin.js"'),
     String((adminHtml.match(/<script/g) || []).length) + ' script tags');
 
+  // The URL declared as [auth] redirect_urls. Shopify should never call it —
+  // this app has no OAuth flow — but a declared redirect URL that 404s is a
+  // dead end on the one path a merchant reaches it by, so it has to land
+  // somewhere useful. `redirect: 'manual'` because the destination is on
+  // admin.shopify.com and fetch would go and get it.
+  res = await fetch(BASE + '/api/auth?shop=' + SHOP, { redirect: 'manual' });
+  ok('the declared auth redirect URL is routed', res.status === 302, 'got ' + res.status);
+  ok('and it lands the merchant in the app inside Shopify admin',
+    (res.headers.get('location') || '') ===
+      'https://admin.shopify.com/store/demo-store/apps/proecomtech-storefront-pwa',
+    res.headers.get('location'));
+
+  // `shop` becomes the host of a Location header, so anything that is not a
+  // myshopify domain has to be refused rather than redirected to.
+  for (const hostile of ['https://evil.example', '//evil.example', 'evil.example', '']) {
+    res = await fetch(BASE + '/api/auth?shop=' + encodeURIComponent(hostile), { redirect: 'manual' });
+    ok('it will not redirect off-platform for ' + JSON.stringify(hostile),
+      res.status === 302 && res.headers.get('location') === '/',
+      res.status + ' ' + res.headers.get('location'));
+  }
+
   res = await fetch(BASE + '/admin.js');
   const adminScript = await res.text();
   ok('the admin script is served', res.status === 200 && adminScript.length > 1000);

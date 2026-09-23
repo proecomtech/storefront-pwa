@@ -995,6 +995,47 @@ app.get('/healthz', (req, res) => {
   }));
 });
 
+/**
+ * The URL declared as `[auth] redirect_urls` in shopify.app.toml.
+ *
+ * This app has no OAuth flow — `scopes = ""`, so Shopify's managed install
+ * grants it without an authorization code and the embedded admin authenticates
+ * with App Bridge session tokens instead. Shopify should therefore never send a
+ * merchant here.
+ *
+ * It exists because "should never" is not "cannot", and a declared redirect URL
+ * that answers 404 is a dead end at exactly the moment a merchant is being
+ * handed to the app for the first time. App Store review also reads the route
+ * as the install destination and has nothing to follow without it. So the
+ * route's whole job is to put the merchant in the app UI inside Shopify admin,
+ * which is where the install should have landed them anyway.
+ *
+ * Top-level, not embedded: whatever sent a merchant here did so in the top
+ * frame, and admin.shopify.com re-embeds the app itself with the `host` and
+ * `shop` parameters App Bridge needs — parameters this route cannot mint.
+ */
+app.get('/api/auth', (req, res) => {
+  const shop = String(req.query.shop || '').toLowerCase();
+
+  // Unvalidated, this would be an open redirect: `shop` arrives from the query
+  // string and is about to become the host part of a Location header.
+  if (!settingsStore.isValidShop(shop)) {
+    return res.redirect(302, '/');
+  }
+
+  const storeHandle = shop.replace(/\.myshopify\.com$/, '');
+
+  // billing.APP_HANDLE is read from shopify.app.toml, so there is no second
+  // copy of the handle to drift. Empty only if that read failed, and a shop
+  // scoped reload of the admin shell still beats a 404.
+  const target = billing.APP_HANDLE
+    ? 'https://admin.shopify.com/store/' + storeHandle + '/apps/' + billing.APP_HANDLE
+    : '/?shop=' + encodeURIComponent(shop);
+
+  res.set('Cache-Control', 'no-store');
+  return res.redirect(302, target);
+});
+
 /** The embedded admin shell. Data arrives over /api/settings, not in the HTML. */
 app.get('/', (req, res) => {
   const rawShop = String(req.query.shop || '').toLowerCase();
