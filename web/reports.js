@@ -106,6 +106,8 @@ function summarise(report) {
     id: report.id,
     createdAt: report.createdAt,
     url: report.url,
+    // Reports from before page targets existed were all of the start URL.
+    pageType: report.pageType || 'home',
     strategy: report.strategy,
     ok: report.ok,
     error: report.error || null,
@@ -464,6 +466,94 @@ function pwaChecksFor(settings, storefront) {
   return { score: Math.round((passed / checks.length) * 100), passed, total: checks.length, checks };
 }
 
+/* ------------------------------------------------------------- page target */
+
+/**
+ * The storefront templates a merchant can point a run at. Each is a path
+ * prefix plus a handle, because the handle is what a merchant can read off the
+ * end of the URL in their browser, and the template is what they want scored:
+ * a product page and a collection page load very different amounts of theme.
+ */
+const PAGE_TYPES = {
+  home: { label: 'Home page', prefix: null },
+  collection: { label: 'Collection page', prefix: '/collections/' },
+  product: { label: 'Product page', prefix: '/products/' },
+  page: { label: 'CMS page', prefix: '/pages/' },
+  custom: { label: 'Custom URL', prefix: null },
+};
+
+/** Shopify handles: letters, digits, dashes, and the odd underscore on a store
+ *  that set one by hand. No slash, no query. */
+const HANDLE_RE = /^[\p{L}\p{N}_-]{1,255}$/u;
+
+function badTarget(message) {
+  return Object.assign(new Error(message), { status: 400 });
+}
+
+/**
+ * Pull a path out of whatever a merchant pasted.
+ *
+ * A full URL on their custom domain is the likeliest thing to arrive, and it is
+ * the path they mean, not the host — so the path is kept and the host dropped.
+ * The run is always against the shop's own domain: this route spends the app's
+ * PageSpeed quota, and it is not a general-purpose URL tester.
+ */
+function pathFrom(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+
+  let parsed;
+  try {
+    parsed = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)
+      ? new URL(raw)
+      : new URL(raw.startsWith('/') ? raw : '/' + raw, 'https://placeholder.invalid');
+  } catch (err) {
+    throw badTarget('That does not look like a URL or a path on your store.');
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw badTarget('Only web addresses can be measured.');
+  }
+  return parsed.pathname + parsed.search;
+}
+
+/**
+ * Which URL a run measures, from the page type and the handle or path the
+ * admin sent. Throws with status 400 and a sentence a merchant can act on.
+ */
+function resolveTarget(shop, settings, pageType, target) {
+  const type = Object.prototype.hasOwnProperty.call(PAGE_TYPES, pageType) ? pageType : 'home';
+  const base = 'https://' + shop;
+  const label = PAGE_TYPES[type].label.toLowerCase();
+
+  if (type === 'home') return { pageType: type, url: base + (settings.startUrl || '/') };
+
+  if (type === 'custom') {
+    const p = pathFrom(target);
+    if (!p) throw badTarget('Enter the URL or path of the page to measure.');
+    return { pageType: type, url: base + p };
+  }
+
+  // A handle, or a pasted URL of the right kind — the handle is taken off the
+  // end of it rather than making the merchant trim it themselves.
+  const prefix = PAGE_TYPES[type].prefix;
+  let handle = String(target || '').trim();
+  if (handle.includes('/')) {
+    const p = pathFrom(handle).split('?')[0];
+    const at = p.indexOf(prefix);
+    if (at === -1) throw badTarget('That is not a ' + label + ' URL. Expected one containing ' + prefix + '.');
+    handle = p.slice(at + prefix.length).split('/')[0];
+  }
+  try { handle = decodeURIComponent(handle); } catch (err) { /* left as typed */ }
+
+  if (!handle) throw badTarget('Enter the handle of the ' + label + ' to measure.');
+  if (!HANDLE_RE.test(handle)) {
+    throw badTarget('"' + handle + '" is not a valid handle. Handles are letters, numbers and dashes, ' +
+      'as they appear at the end of the page\'s URL.');
+  }
+
+  return { pageType: type, url: base + prefix + encodeURIComponent(handle) };
+}
+
 /* ------------------------------------------------------------------ running */
 
 /**
@@ -494,14 +584,15 @@ function cooldownRemaining(shop) {
   return Math.max(0, COOLDOWN_MS - (Date.now() - last));
 }
 
-async function build(shop, settings, proxyBase, strategy) {
-  const url = 'https://' + shop + settings.startUrl;
+async function build(shop, settings, proxyBase, strategy, target) {
+  const { url, pageType } = target;
   const storefront = await inspectStorefront(shop, proxyBase);
 
   const report = {
     id: crypto.randomBytes(8).toString('hex'),
     createdAt: new Date().toISOString(),
     url,
+    pageType,
     strategy,
     ok: true,
     error: null,
@@ -536,9 +627,18 @@ async function build(shop, settings, proxyBase, strategy) {
  * run already under way — the second of which is not an error at all, it is the
  * first run's own promise handed back.
  */
-function generate(shop, settings, proxyBase, strategy) {
+function generate(shop, settings, proxyBase, strategy, pageType, pageTarget) {
   if (!settingsStore.isValidShop(shop)) {
     return Promise.reject(Object.assign(new Error('invalid shop'), { status: 400 }));
+  }
+
+  // Before the in-flight and cooldown checks, so a mistyped handle is answered
+  // at once and does not cost the merchant thirty seconds.
+  let target;
+  try {
+    target = resolveTarget(shop, settings, pageType, pageTarget);
+  } catch (err) {
+    return Promise.reject(err);
   }
 
   const running = inFlight.get(shop);
@@ -554,7 +654,7 @@ function generate(shop, settings, proxyBase, strategy) {
 
   lastRun.set(shop, Date.now());
 
-  const run = build(shop, settings, proxyBase, strategy === 'desktop' ? 'desktop' : 'mobile')
+  const run = build(shop, settings, proxyBase, strategy === 'desktop' ? 'desktop' : 'mobile', target)
     .then((report) => {
       const data = readAll(shop);
       data.reports.unshift(report);
@@ -584,4 +684,6 @@ module.exports = {
   read,
   remove,
   removeShop,
+  // Exported for the tests, for the same reason as explainManifestFailure.
+  resolveTarget,
 };

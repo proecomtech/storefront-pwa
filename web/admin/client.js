@@ -1146,7 +1146,7 @@ function script() {
 
     var table = node('table', 'data');
     var head = node('tr');
-    ['Created', 'Device', 'PWA score', 'Performance', ''].forEach(function (h) {
+    ['Created', 'Page', 'Device', 'PWA score', 'Performance', ''].forEach(function (h) {
       head.appendChild(node('th', null, h));
     });
     table.appendChild(head);
@@ -1158,6 +1158,14 @@ function script() {
       when.appendChild(node('div', null, new Date(row.createdAt).toLocaleString()));
       if (row.error) when.appendChild(node('div', 'why muted', row.error));
       tr.appendChild(when);
+
+      var where = node('td');
+      where.appendChild(node('div', null, (REPORT_PAGES[row.pageType] || REPORT_PAGES.home).name));
+      if (row.url) {
+        var path = row.url.replace(/^https?:\\/\\/[^\\/]+/, '') || '/';
+        where.appendChild(node('div', 'why muted', path));
+      }
+      tr.appendChild(where);
 
       tr.appendChild(node('td', null, row.strategy === 'desktop' ? 'Desktop' : 'Mobile'));
 
@@ -1305,6 +1313,39 @@ function script() {
       });
   }
 
+  /* What each page type asks for. Kept in step with PAGE_TYPES in reports.js,
+   * which is what actually decides the URL. */
+  var REPORT_PAGES = {
+    home: { name: 'Home' },
+    collection: { name: 'Collection', label: 'Collection handle', placeholder: 'summer-sale',
+      hint: 'The part after /collections/ in its URL. Pasting the whole URL works too.' },
+    product: { name: 'Product', label: 'Product handle', placeholder: 'classic-tee',
+      hint: 'The part after /products/ in its URL. Pasting the whole URL works too.' },
+    page: { name: 'CMS page', label: 'Page handle', placeholder: 'about-us',
+      hint: 'The part after /pages/ in its URL. Pasting the whole URL works too.' },
+    custom: { name: 'Custom', label: 'URL or path', placeholder: '/blogs/news',
+      hint: 'Any page on your store. It is always measured on your own domain.' }
+  };
+
+  function renderReportTarget() {
+    var type = value('reportPageType') || 'home';
+    var spec = REPORT_PAGES[type] || REPORT_PAGES.home;
+    var input = el('reportTarget');
+
+    el('reportTargetWrap').hidden = !spec.label;
+    if (!spec.label) return;
+
+    document.querySelector('label[for="reportTarget"]').textContent = spec.label;
+    input.placeholder = spec.placeholder;
+    el('reportTargetHint').textContent = spec.hint;
+  }
+
+  el('reportPageType').addEventListener('change', function () {
+    el('reportTarget').value = '';
+    renderReportTarget();
+  });
+  renderReportTarget();
+
   el('generateReport').addEventListener('click', function () {
     var button = el('generateReport');
     var note = el('reportNote');
@@ -1316,7 +1357,11 @@ function script() {
     api('/api/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ strategy: value('reportStrategy') || 'mobile' })
+      body: JSON.stringify({
+        strategy: value('reportStrategy') || 'mobile',
+        pageType: value('reportPageType') || 'home',
+        target: value('reportTarget')
+      })
     }).then(function (body) {
       renderReportList(body.reports);
       renderReportDetail(body.report);
@@ -1529,6 +1574,8 @@ function script() {
     var target = event.target;
     if (!target || !target.tagName) return;
     if (['INPUT', 'TEXTAREA', 'SELECT'].indexOf(target.tagName) === -1) return;
+    // Controls that pick what to run, not what to save — the report target.
+    if (target.closest && target.closest('[data-transient]')) return;
 
     markDirty();
     updateCounters();
@@ -1539,6 +1586,7 @@ function script() {
     var target = event.target;
     if (!target || !target.tagName) return;
     if (target.id === 'enabled') renderEnabled();
+    if (target.closest && target.closest('[data-transient]')) return;
     if (['INPUT', 'TEXTAREA', 'SELECT'].indexOf(target.tagName) !== -1) markDirty();
   });
 

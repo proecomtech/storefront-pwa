@@ -1231,6 +1231,33 @@ async function run() {
   // Four distinct causes must not collapse into one sentence again.
   ok('the four causes give four different answers',
     new Set([locked, missing, themePage]).size === 3);
+
+  console.log('\n== report page targets ==');
+
+  const target = (type, value) => reportsModule.resolveTarget(SHOP, { startUrl: '/?source=pwa' }, type, value);
+  const refused = (type, value) => {
+    try { target(type, value); return null; } catch (err) { return err; }
+  };
+  const HOST = 'https://' + SHOP;
+
+  ok('the home page is the start URL', target('home', '').url === HOST + '/?source=pwa');
+  ok('an unknown page type falls back to home', target('bogus', 'x').pageType === 'home');
+  ok('a collection handle', target('collection', 'summer-sale').url === HOST + '/collections/summer-sale');
+  ok('a product handle', target('product', 'classic-tee').url === HOST + '/products/classic-tee');
+  ok('a CMS page handle', target('page', 'about-us').url === HOST + '/pages/about-us');
+  ok('a pasted product URL on a custom domain is trimmed to its handle',
+    target('product', 'https://shop.example.com/collections/all/products/classic-tee?variant=1').url ===
+      HOST + '/products/classic-tee');
+  ok('a pasted URL of the wrong kind is refused',
+    (refused('product', 'https://shop.example.com/pages/about') || {}).status === 400);
+  ok('a blank handle is refused', (refused('collection', '  ') || {}).status === 400);
+  ok('a handle with a query is refused', (refused('product', 'tee?x=<script>') || {}).status === 400);
+  ok('a custom path keeps its query', target('custom', '/blogs/news?page=2').url === HOST + '/blogs/news?page=2');
+  ok('a custom URL on another host is measured on the shop\'s own domain',
+    target('custom', 'https://evil.example/search?q=a').url === HOST + '/search?q=a');
+  ok('a custom path without a slash gets one', target('custom', 'cart').url === HOST + '/cart');
+  ok('a non-web custom URL is refused', (refused('custom', 'ftp://x/y') || {}).status === 400);
+  ok('a blank custom URL is refused', (refused('custom', '') || {}).status === 400);
 }
 
 const server = spawn(process.execPath, ['web/server.js'], {

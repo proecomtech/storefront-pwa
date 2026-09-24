@@ -962,7 +962,9 @@ app.post('/api/reports', auth.requireSession, requireSection('reports'), async (
       req.shop,
       settings,
       ADMIN_PROXY_BASE,
-      String((req.body && req.body.strategy) || 'mobile')
+      String((req.body && req.body.strategy) || 'mobile'),
+      String((req.body && req.body.pageType) || 'home'),
+      String((req.body && req.body.target) || '').slice(0, 2048)
     );
     res.set('Cache-Control', 'no-store');
     return res.json({ report, reports: reports.list(req.shop) });

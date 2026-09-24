@@ -194,7 +194,7 @@ The admin is ten pages behind a sidebar:
 | **Cache assets** | What the service worker keeps (home page, Google Fonts, storefront pages, CSS/JS, images), the precache list — a paid control, shown disabled on Free — and the forced-refresh block. |
 | **Offline page** | The title and message shown with no connection, previewed on a phone. |
 | **Settings** | Launch behaviour, shortcuts, language and categories, iOS, install-dialog screenshots, the service worker toggle, and the master switch. |
-| **PWA / Performance reports** | A PageSpeed run plus this app's own installability score, stored as a history of up to twenty. |
+| **PWA / Performance reports** | A PageSpeed run against the home page, a collection, product or CMS page by handle, or any custom path on the store, plus this app's own installability score, stored as a history of up to twenty. |
 | **Analytics** | Installs and dismissals split by iOS / Android / desktop, a daily chart, and the full funnel. |
 | **Quick setup wizard** | The installability checks, run against the live storefront, each failing one saying what to do. |
 | **FAQs** | The questions this app actually gets asked. |

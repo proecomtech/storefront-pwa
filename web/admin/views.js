@@ -529,9 +529,21 @@ function reportsPage() {
 
     '<div id="reportsBody">' +
 
-    '<section>' +
+    '<section data-transient>' +
     '<div class="between">' +
-    '<div class="row">' +
+    '<div class="row" style="align-items:flex-start">' +
+    field('reportPageType', 'Page to measure',
+      select('reportPageType', [
+        ['home', 'Home page'],
+        ['collection', 'Collection page'],
+        ['product', 'Product page'],
+        ['page', 'CMS page'],
+        ['custom', 'Custom URL'],
+      ])) +
+    '<div id="reportTargetWrap" hidden>' +
+    field('reportTarget', 'Handle', text('reportTarget', ''),
+      '<span id="reportTargetHint"></span>') +
+    '</div>' +
     field('reportStrategy', 'Measure as',
       select('reportStrategy', [['mobile', 'Mobile'], ['desktop', 'Desktop']])) +
     '</div>' +
