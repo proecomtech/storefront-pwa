@@ -1031,7 +1031,7 @@ async function run() {
     (res.headers.get('content-security-policy') || '').includes('frame-ancestors https://' + SHOP));
 
   const ROUTES = ['home', 'configuration', 'install-message', 'cache-assets', 'offline-page',
-                  'settings', 'reports', 'analytics', 'setup', 'faqs', 'plans'];
+                  'offline-browsing', 'settings', 'reports', 'analytics', 'setup', 'faqs', 'plans'];
   for (const route of ROUTES) {
     ok('the admin carries the ' + route + ' page', adminHtml.includes('data-page="' + route + '"'));
   }
@@ -1042,6 +1042,30 @@ async function run() {
   // page with no section would silently be ungateable.
   ok('every sidebar link declares the plan section it needs',
     adminHtml.split('data-section="').length - 1 === ROUTES.length);
+  ok('the offline browsing page carries the Cloudflare deploy and all three configs',
+    adminHtml.includes('id="cfDeploy"') && adminHtml.includes('type="password" id="cfToken"') &&
+    ['edgeCloudflare', 'edgeNginx', 'edgeApache'].every((id) => adminHtml.includes('id="' + id + '"')));
+
+  // No network in these: GET /api/offline-edge reads the live storefront, and a
+  // valid-looking token would go to Cloudflare. Only the refusals are local.
+  res = await fetch(BASE + '/api/offline-edge/cloudflare', { method: 'POST' });
+  ok('the Cloudflare deploy needs a session token', res.status === 401, 'got ' + res.status);
+  res = await admin('/api/offline-edge/cloudflare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: 'not a token; rm -rf' }),
+  });
+  ok('a malformed Cloudflare token is refused before anything is called', res.status === 400, 'got ' + res.status);
+
+  const edgeSnippets = require('../web/edge.js').snippets('/tools/shop-pwa');
+  ok('the generated Worker fetches the configured proxy path',
+    edgeSnippets.cloudflare.includes('const PROXY_SW_PATH = "/tools/shop-pwa/sw.js";'));
+  ok('the generated Worker marks its response for the storefront to find',
+    edgeSnippets.cloudflare.includes("'X-PWA-Root-Worker', '1'"));
+  ok('the nginx and Apache configs use the configured proxy path',
+    edgeSnippets.nginx.includes('/tools/shop-pwa/sw.js') && edgeSnippets.apache.includes('/tools/shop-pwa/sw.js') &&
+    !edgeSnippets.nginx.includes('/apps/pwa/sw.js'));
+
   ok('both report pages carry an upgrade panel for merchants on the free plan',
     adminHtml.includes('id="reportsLocked"') && adminHtml.includes('id="analyticsLocked"'));
 
