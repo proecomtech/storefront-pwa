@@ -143,7 +143,7 @@ The app requests **no Admin API scopes** and stores no access token.
 ### 1. Link the app
 
 ```bash
-cd apps/storefront-pwa-live
+cd apps/storefront-pwa
 npm install
 shopify app config link       # writes the real client_id into shopify.app.toml
 shopify app deploy            # uploads the theme app embed
