@@ -15,7 +15,7 @@ slots into the fleet later without being moved.
 One Node process. No database, no frontend build step, no Redis, no queue.
 
 ```
-browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3007 (127.0.0.1 only)
+browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3009 (127.0.0.1 only)
                       pwa.proecomtech.com       /opt/gaapps/storefront-pwa-live
                                                      │
                                                      ▼
@@ -27,7 +27,7 @@ browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3007 (127.0.0.1 on
 |---|---|
 | Runtime | Node 20+ (this guide installs 22 LTS) |
 | Dependencies | `express`, `sharp` (native — see step 5) |
-| Port | `3007`, bound to `127.0.0.1` only |
+| Port | `3009`, bound to `127.0.0.1` only |
 | Code | `/opt/gaapps/storefront-pwa-live` — replaced on every deploy |
 | State | `/var/lib/gaapps/storefront-pwa-live` — **must survive** a deploy |
 | Secrets | `/etc/gaapps/storefront-pwa-live.env`, `640 root:gaapps` |
@@ -232,7 +232,7 @@ be exactly `storefront-pwa-live`. → [detail](#step-3--get-the-code-onto-the-se
 ```bash
 cat > /etc/gaapps/storefront-pwa-live.env <<'EOF'
 NODE_ENV=production
-PORT=3007
+PORT=3009
 SHOPIFY_API_KEY=<CLIENT_ID>
 SHOPIFY_API_SECRET=<CLIENT_SECRET>
 DATA_DIR=/var/lib/gaapps/storefront-pwa-live
@@ -276,7 +276,7 @@ Write the unit from [step 6 below](#step-6--systemd-service) (copy the whole
 ```bash
 systemctl daemon-reload
 systemctl enable --now storefront-pwa-live
-curl -s localhost:3007/healthz
+curl -s localhost:3009/healthz
 ```
 
 **Check:** the JSON shows `"apiKey":true`, `"apiSecret":true`, and
@@ -435,7 +435,7 @@ apt install -y nodejs
 node -v    # must print v22.x
 ```
 
-Firewall. Port 3007 is deliberately **not** opened — the app binds to
+Firewall. Port 3009 is deliberately **not** opened — the app binds to
 `127.0.0.1` and is reachable only through nginx:
 
 ```bash
@@ -554,7 +554,7 @@ process. They are never deployed as a file inside the checkout.
 ```bash
 cat > /etc/gaapps/storefront-pwa-live.env <<'EOF'
 NODE_ENV=production
-PORT=3007
+PORT=3009
 
 SHOPIFY_API_KEY=REPLACE_WITH_CLIENT_ID
 SHOPIFY_API_SECRET=REPLACE_WITH_CLIENT_SECRET
@@ -578,7 +578,7 @@ in the workspace.
 | `SHOPIFY_API_KEY` | yes | App Bridge never initialises; the embedded admin is a blank frame in Shopify admin |
 | `SHOPIFY_API_SECRET` | yes | Session tokens cannot be verified — the admin loads but every save is rejected, and the uninstall webhook is ignored, so merchant logos are never deleted |
 | `DATA_DIR` | yes | Defaults to `<app>/data`, which is inside the read-only `/opt` — settings vanish on the first redeploy |
-| `PORT` | no | Defaults to 3007; must match the nginx `proxy_pass` |
+| `PORT` | no | Defaults to 3009; must match the nginx `proxy_pass` |
 | `PWA_PROXY_BASE` | no | Defaults to `/apps/pwa`. Only the admin's Reports and Quick setup wizard read it — storefront requests carry the subpath themselves. Set it if you changed the proxy subpath in the Partner dashboard, or those two pages report a missing manifest on a store that is working fine |
 | `PAGESPEED_API_KEY` | no | Without one the Reports page uses Google's unauthenticated PageSpeed quota. Occasional runs are fine; a busy fleet will start seeing the run fail with a quota message, and the report is still stored with the installability half filled in |
 | `PWA_APP_HANDLE` | no | Defaults to `proecomtech-storefront-pwa`. Must match `handle` in `shopify.app.toml`, or every Upgrade button in the admin opens a Shopify 404 |
@@ -736,7 +736,7 @@ systemctl --no-pager status storefront-pwa-live
 Prove it is listening locally before involving nginx:
 
 ```bash
-curl -s localhost:3007/healthz
+curl -s localhost:3009/healthz
 ```
 
 Expect JSON with `"ok":true` and — this is the part worth actually reading —
@@ -778,7 +778,7 @@ server {
     client_max_body_size 9m;
 
     location / {
-        proxy_pass http://127.0.0.1:3007;
+        proxy_pass http://127.0.0.1:3009;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
@@ -1073,7 +1073,7 @@ sudo -u gaapps git pull
 sudo -u gaapps npm install     # or npm ci, once a lockfile is committed
 systemctl restart storefront-pwa-live
 
-curl -s localhost:3007/healthz
+curl -s localhost:3009/healthz
 journalctl -u storefront-pwa-live -n 30 --no-pager
 ```
 
@@ -1126,7 +1126,7 @@ Useful one-liners:
 systemctl status storefront-pwa-live
 journalctl -u storefront-pwa-live -f
 journalctl -u storefront-pwa-live --since "10 min ago" --no-pager
-curl -s localhost:3007/healthz
+curl -s localhost:3009/healthz
 nginx -t && systemctl reload nginx
 tail -f /var/log/nginx/pwa.proecomtech.com.error.log
 ```
@@ -1138,8 +1138,8 @@ tail -f /var/log/nginx/pwa.proecomtech.com.error.log
 If the box already runs the other `gaapps.cloud` apps, most of the above is
 done. What remains:
 
-1. **Port 3007** is already reserved for this app in the fleet table — confirm
-   nothing else took it (`ss -ltnp | grep 3007`). Two services on one port fail
+1. **Port 3009** is already reserved for this app in the fleet table — confirm
+   nothing else took it (`ss -ltnp | grep 3009`). Two services on one port fail
    confusingly: the loser exits and systemd restarts it in a loop.
 2. `mkdir /var/lib/gaapps/storefront-pwa-live` + `chown gaapps:gaapps` (step 1).
 3. Clone into `/opt/gaapps/storefront-pwa-live` (step 3), write

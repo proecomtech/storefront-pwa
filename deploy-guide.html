@@ -567,7 +567,7 @@
     </div>
     <dl class="facts">
       <div><dt>Host</dt><dd>pwa.proecomtech.com</dd></div>
-      <div><dt>Port</dt><dd>3007 · 127.0.0.1 only</dd></div>
+      <div><dt>Port</dt><dd>3009 · 127.0.0.1 only</dd></div>
       <div><dt>Code</dt><dd>/opt/gaapps/storefront-pwa-live</dd></div>
       <div><dt>State</dt><dd>/var/lib/gaapps/storefront-pwa-live</dd></div>
       <div><dt>Build</dt><dd>none</dd></div>
@@ -619,7 +619,7 @@
       </div>
 
       <div class="diagram">
-<pre>browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3007 <span class="dim">(127.0.0.1 only)</span>
+<pre>browser / Shopify ──▶ nginx :443 (TLS)  ──▶ node :3009 <span class="dim">(127.0.0.1 only)</span>
                       pwa.proecomtech.com       /opt/gaapps/storefront-pwa-live
                                                      │
                                                      ▼
@@ -858,7 +858,7 @@ to do in the Partner dashboard and the theme editor.</code></pre>
         <span class="step-n">03</span>
         <div>
           <h2>Install the base system</h2>
-          <p class="step-why">Packages, Node 22, firewall. Port 3007 stays closed —
+          <p class="step-why">Packages, Node 22, firewall. Port 3009 stays closed —
             the app binds to <code>127.0.0.1</code> and is reached through nginx.</p>
           <span class="where vps">VPS · as root</span>
         </div>
@@ -1021,7 +1021,7 @@ chown -R gaapps:gaapps /opt/gaapps/storefront-pwa-live</code></pre>
         <div class="cmd-head"><span>bash · on the VPS as root</span><button class="copy">Copy</button></div>
 <pre><code>cat &gt; /etc/gaapps/storefront-pwa-live.env &lt;&lt;'EOF'
 NODE_ENV=production
-PORT=3007
+PORT=3009
 SHOPIFY_API_KEY=&lt;CLIENT_ID&gt;
 SHOPIFY_API_SECRET=&lt;CLIENT_SECRET&gt;
 DATA_DIR=/var/lib/gaapps/storefront-pwa-live
@@ -1040,7 +1040,7 @@ chmod 640 /etc/gaapps/storefront-pwa-live.env</code></pre>
             <tr><td class="mono">SHOPIFY_API_KEY</td><td>yes</td><td>App Bridge never initialises; the embedded admin is a blank frame in Shopify admin</td></tr>
             <tr><td class="mono">SHOPIFY_API_SECRET</td><td>yes</td><td>Session tokens cannot be verified — the admin loads but every save is rejected, and the uninstall webhook is ignored, so merchant logos are never deleted</td></tr>
             <tr><td class="mono">DATA_DIR</td><td>yes</td><td>Defaults to <code>&lt;app&gt;/data</code>, inside the read-only <code>/opt</code> — settings vanish on the first redeploy</td></tr>
-            <tr><td class="mono">PORT</td><td>no</td><td>Defaults to 3007; must match the nginx <code>proxy_pass</code></td></tr>
+            <tr><td class="mono">PORT</td><td>no</td><td>Defaults to 3009; must match the nginx <code>proxy_pass</code></td></tr>
             <tr><td class="mono">PWA_VERIFY_PROXY</td><td>no</td><td>See below</td></tr>
           </tbody>
         </table>
@@ -1189,7 +1189,7 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now storefront-pwa-live
-curl -s localhost:3007/healthz</code></pre>
+curl -s localhost:3009/healthz</code></pre>
       </div>
 
       <div class="check">
@@ -1237,7 +1237,7 @@ server {
     client_max_body_size 9m;
 
     location / {
-        proxy_pass http://127.0.0.1:3007;
+        proxy_pass http://127.0.0.1:3009;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
@@ -1660,7 +1660,7 @@ sudo -u gaapps git pull
 sudo -u gaapps npm install     # or npm ci, once a lockfile is committed
 systemctl restart storefront-pwa-live
 
-curl -s localhost:3007/healthz
+curl -s localhost:3009/healthz
 journalctl -u storefront-pwa-live -n 30 --no-pager</code></pre>
       </div>
 
@@ -1713,7 +1713,7 @@ journalctl -u storefront-pwa-live -n 30 --no-pager</code></pre>
 <pre><code>systemctl status storefront-pwa-live
 journalctl -u storefront-pwa-live -f
 journalctl -u storefront-pwa-live --since "10 min ago" --no-pager
-curl -s localhost:3007/healthz
+curl -s localhost:3009/healthz
 nginx -t &amp;&amp; systemctl reload nginx
 tail -f /var/log/nginx/pwa.proecomtech.com.error.log</code></pre>
       </div>
@@ -1722,7 +1722,7 @@ tail -f /var/log/nginx/pwa.proecomtech.com.error.log</code></pre>
   </main>
 
   <footer>
-    <span>Storefront PWA · port 3007 · Ubuntu 24.04</span>
+    <span>Storefront PWA · port 3009 · Ubuntu 24.04</span>
     <span>Fleet runbook: ../../DEPLOY.md · Source: apps/storefront-pwa-live/DEPLOY.md</span>
   </footer>
 

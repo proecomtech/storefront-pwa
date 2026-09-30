@@ -156,7 +156,7 @@ shopify app deploy            # uploads the theme app embed
 | `SHOPIFY_API_KEY` | yes | Client ID. Without it App Bridge cannot load and the admin will not open. |
 | `SHOPIFY_API_SECRET` | yes | Verifies session tokens. Without it the admin is read-only. |
 | `DATA_DIR` | yes in production | Where settings and images are written. Must survive a redeploy. |
-| `PORT` | no | Defaults to 3007. |
+| `PORT` | no | Defaults to 3009. |
 | `PWA_PROXY_BASE` | no | The proxy subpath, for the admin's report and setup checks only. Defaults to `/apps/pwa`. Storefront requests carry it themselves; the admin runs in an iframe with no way to ask, so it has to be told if you changed it. |
 | `PWA_APP_HANDLE` | no | The app handle in the Shopify App Pricing URL. Must match `handle` in `shopify.app.toml` or the Upgrade buttons 404. |
 | `PWA_PLAN_HANDLE_FREE`<br>`PWA_PLAN_HANDLE_MONTHLY`<br>`PWA_PLAN_HANDLE_ANNUAL` | no | The plan handles as typed in the Partner dashboard. See [Billing](#billing). |
