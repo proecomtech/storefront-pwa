@@ -78,6 +78,11 @@ async function exchange(shop, sessionToken) {
     subject_token: sessionToken,
     subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
     requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
+    // The Admin API refuses non-expiring offline tokens outright (HTTP 403).
+    // An expiring one comes with a refresh token, which this app ignores: every
+    // caller has a fresh session token, so an expired access token is simply
+    // exchanged again.
+    expiring: '1',
   });
 
   const token = res.json && res.json.access_token;
@@ -106,9 +111,10 @@ async function graphql(shop, sessionToken, query, variables) {
   let token = await tokenFor(shop, sessionToken);
   let res = await post(url, { 'X-Shopify-Access-Token': token }, { query, variables });
 
-  // A token revoked by an uninstall and reinstall, or expired early. One fresh
-  // exchange, then give up rather than loop.
-  if (res.status === 401) {
+  // A token revoked by an uninstall and reinstall, expired early, or — a 403 —
+  // one cached before a change in what Shopify accepts. One fresh exchange,
+  // then give up rather than loop.
+  if (res.status === 401 || res.status === 403) {
     tokens.delete(shop);
     token = await exchange(shop, sessionToken);
     res = await post(url, { 'X-Shopify-Access-Token': token }, { query, variables });
