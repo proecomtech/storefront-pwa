@@ -358,6 +358,16 @@ const STYLES = `
   .plan li { padding:4px 0 4px 20px; position:relative; }
   .plan li::before { content:"\\2713"; position:absolute; left:0; color:var(--ok); font-weight:700; }
   .plan li.no { color:var(--muted); }
+  /* The live subscription, as Shopify reports it, above the plan cards. */
+  .live dl { display:grid; grid-template-columns:max-content 1fr; gap:6px 18px; margin:10px 0 0;
+    font-size:13px; }
+  .live dt { color:var(--muted); }
+  .live dd { margin:0; font-variant-numeric:tabular-nums; }
+  .live .chip { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.03em;
+    text-transform:uppercase; padding:2px 8px; border-radius:99px; margin-left:6px;
+    background:var(--ok); color:#fff; }
+  .live .chip.test { background:var(--warn-bg); color:var(--text); border:1px solid var(--warn-line); }
+  .live .err { color:var(--bad); font-size:13px; margin:10px 0 0; }
   .plan li.no::before { content:"\\2014"; color:var(--muted); }
 
   /* Free-plan allowance. A bar rather than a number alone, because "72 of 100"

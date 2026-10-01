@@ -14,7 +14,9 @@
  *                 token's `dest` claim and never from the request.
  *
  * The app has no Admin API scopes and stores no access token. See
- * shopify.app.toml for why that is possible.
+ * shopify.app.toml for why that is possible. The one Admin API call it makes —
+ * reading its own subscription — uses a token exchanged from the session token
+ * and held in memory only (web/shopify-admin.js).
  */
 
 require('./load-env.js');
@@ -868,14 +870,15 @@ function requireSection(section) {
 /**
  * The shop's plan, its allowance, and the plan table the admin renders.
  *
- * Reconciliation runs here rather than on a timer: this route is hit on every
- * admin load, which is exactly when the answer needs to be current, and it is
- * rate-limited by its own hour-long TTL. It is awaited because a merchant who
- * has just cancelled should not be shown the paid plan one last time.
+ * The plan is read live from Shopify here (billing.syncLive) rather than on a
+ * timer: this route is hit on every admin load, which is exactly when the
+ * answer needs to be current. It is awaited because a merchant who has just
+ * cancelled should not be shown the paid plan one last time. `?refresh=1` skips
+ * the short reuse window, for the Plans page's "Check again" button.
  */
 app.get('/api/plan', auth.requireSession, async (req, res, next) => {
   try {
-    await billing.reconcile(req.shop);
+    await billing.syncLive(req.shop, req.sessionToken, { force: req.query.refresh === '1' });
     res.set('Cache-Control', 'no-store');
     res.json(billing.statusFor(req.shop, stats.installsThisMonth(req.shop)));
   } catch (err) {
@@ -904,7 +907,7 @@ app.post('/api/plan', auth.requireSession, async (req, res, next) => {
     // force: the merchant has just come back from Shopify's pricing page, so
     // the hour-long TTL is exactly wrong here — this is the moment the Partner
     // API has something new to say.
-    await billing.reconcile(req.shop, { force: true });
+    await billing.syncLive(req.shop, req.sessionToken, { force: true });
 
     res.set('Cache-Control', 'no-store');
     return res.json(billing.statusFor(req.shop, stats.installsThisMonth(req.shop)));

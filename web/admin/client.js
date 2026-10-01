@@ -1023,8 +1023,64 @@ function script() {
     });
   }
 
+  function money(price) {
+    if (!price || price.amount == null) return '';
+    var n = Number(price.amount);
+    try {
+      return n.toLocaleString(undefined, { style: 'currency', currency: price.currencyCode || 'USD' });
+    } catch (err) {
+      return n.toFixed(2) + ' ' + (price.currencyCode || '');
+    }
+  }
+
+  /*
+   * What Shopify itself says this shop is subscribed to, read through the Admin
+   * API on this load. Shown above the cards so a merchant, a support engineer
+   * and an App Store reviewer are all looking at Shopify's answer rather than
+   * the app's memory of the last redirect. A test charge is labelled as one.
+   */
+  function renderLive(live) {
+    var box = el('liveBody');
+    if (!box) return;
+    clear(box);
+
+    var dl = node('dl');
+    function row(label, value) {
+      dl.appendChild(node('dt', null, label));
+      var dd = node('dd');
+      if (typeof value === 'string') dd.textContent = value;
+      else dd.appendChild(value);
+      dl.appendChild(dd);
+    }
+
+    if (live && live.checked) {
+      var sub = node('span', null, live.subscribed ? (live.name || 'Paid plan') : 'No paid subscription (Free)');
+      if (live.subscribed) {
+        sub.appendChild(node('span', 'chip' + (live.test ? ' test' : ''),
+          live.test ? 'Test charge' : (live.status || 'Active')));
+      }
+      row('Subscription', sub);
+      if (live.subscribed && live.price) {
+        row('Price', money(live.price) + (live.interval === 'ANNUAL' ? ' / year' : ' / 30 days'));
+      }
+      if (live.subscribed && live.currentPeriodEnd) {
+        row('Renews', new Date(live.currentPeriodEnd).toLocaleDateString());
+      }
+      row('Checked', new Date(live.checkedAt).toLocaleString());
+      box.appendChild(dl);
+    }
+
+    if (live && live.error) {
+      box.appendChild(node('p', 'err', 'Could not reach Shopify just now: ' + live.error +
+        (live.checked ? ' Showing the last confirmed answer.' : ' Showing the plan this app has on record.')));
+    } else if (!live || !live.checked) {
+      box.appendChild(node('p', 'hint', 'Not checked with Shopify yet.'));
+    }
+  }
+
   function renderPlan(status) {
     plan = status;
+    renderLive(status.live);
 
     el('navPlanName').textContent = status.planName;
     el('navPlan').className = 'navplan' + (status.planId === 'free' ? ' free' : '');
@@ -1064,6 +1120,8 @@ function script() {
       // those two states their store is in.
       parts.push(status.verified
         ? 'Confirmed with Shopify ' + new Date(status.verifiedAt).toLocaleString() + '.'
+        : status.live && status.live.error
+        ? 'Shopify could not be reached to confirm it; this is the plan last recorded.'
         : (status.reconciliationConfigured
           ? 'Not yet confirmed with Shopify.'
           : 'Recorded from your last plan change. This app is not configured to re-check it with Shopify.'));
@@ -1075,12 +1133,29 @@ function script() {
     showRoute();
   }
 
-  function loadPlan() {
-    return api('/api/plan').then(renderPlan).catch(function (err) {
+  function loadPlan(refresh) {
+    return api('/api/plan' + (refresh ? '?refresh=1' : '')).then(renderPlan).catch(function (err) {
       // Non-fatal. allows() treats an unknown plan as unrestricted, so a failed
       // read leaves the admin usable and the server still refuses what it must.
       var source = el('planSource');
       if (source) source.textContent = 'Could not read your plan: ' + err.message;
+      var live = el('liveBody');
+      if (live) {
+        clear(live);
+        live.appendChild(node('p', 'err', 'Could not read your plan: ' + err.message));
+      }
+    });
+  }
+
+  var refreshButton = el('planRefresh');
+  if (refreshButton) {
+    refreshButton.addEventListener('click', function () {
+      refreshButton.disabled = true;
+      refreshButton.textContent = 'Checking…';
+      loadPlan(true).then(function () {
+        refreshButton.disabled = false;
+        refreshButton.textContent = 'Check again';
+      });
     });
   }
 

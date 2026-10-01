@@ -728,6 +728,14 @@ function plansPage() {
     'Billing is handled by Shopify. Choosing a plan opens Shopify’s own checkout — this app never ' +
     'sees a card, and cancelling is one click in the same place.',
 
+    '<section class="live" id="liveCard">' +
+    '<div class="between">' +
+    '<h2 style="margin:0">Live status from Shopify</h2>' +
+    '<button type="button" class="secondary" id="planRefresh">Check again</button>' +
+    '</div>' +
+    '<div id="liveBody"><p class="hint" style="margin:10px 0 0">Checking with Shopify…</p></div>' +
+    '</section>' +
+
     '<div id="planCards" class="plancards"></div>' +
 
     '<section>' +

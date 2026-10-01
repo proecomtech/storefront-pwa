@@ -340,6 +340,19 @@ every visitor of every shop for the sake of a counter.
 
 ### How the app knows which plan a shop is on
 
+**Live, from Shopify, on every admin load.** `GET /api/plan` exchanges the
+merchant's App Bridge session token for an Admin API token
+([token exchange](https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/token-exchange))
+and reads `currentAppInstallation.activeSubscriptions`, which needs no scopes.
+The answer is the plan the app enforces, and the Plans page shows it in a
+**Live status from Shopify** card — subscription name, price, renewal date, and
+a *Test charge* label when Shopify made a test subscription (development stores,
+App Store review). The token lives in memory only (`web/shopify-admin.js`);
+answers are reused for 60 seconds, and *Check again* bypasses that.
+
+If that call fails, the recorded plan stands and the card says why; the two
+signals below are then what the record rests on.
+
 Shopify App Pricing sends **no webhooks** for subscription changes;
 `APP_SUBSCRIPTIONS_UPDATE` was deprecated in April 2026. Two signals are left,
 and `web/billing.js` uses both:

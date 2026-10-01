@@ -38,6 +38,7 @@ const crypto = require('crypto');
 
 const settingsStore = require('./settings.js');
 const plans = require('./plans.js');
+const shopifyAdmin = require('./shopify-admin.js');
 
 const PLANS_DIR = path.join(settingsStore.DATA_DIR, 'plans');
 
@@ -121,6 +122,8 @@ function blank(shop) {
     shopGid: null,
     cancelAtEndOfCycle: false,
     trialEndsAt: null,
+    // The subscription as the Admin API last reported it — see syncLive().
+    live: null,
     // Every change, oldest first, capped. A plan dispute is the one support
     // question where "what did it say last week" is the whole answer.
     history: [],
@@ -226,6 +229,9 @@ function remove(shop) {
   if (!settingsStore.isValidShop(shop)) return;
   cache.delete(shop);
   reconciling.delete(shop);
+  syncing.delete(shop);
+  liveErrors.delete(shop);
+  shopifyAdmin.forget(shop);
   try {
     fs.rmSync(planFile(shop), { force: true });
   } catch (err) {
@@ -268,6 +274,7 @@ function statusFor(shop, installsThisMonth) {
     reconciliationConfigured: PARTNER_CONFIGURED,
     cancelAtEndOfCycle: Boolean(record.cancelAtEndOfCycle),
     trialEndsAt: record.trialEndsAt || null,
+    live: liveStatus(shop, record),
     allowance: plans.allowanceFor(plan.id, installsThisMonth),
     upgradeUrl: pricingUrl(shop),
     plans: plans.publicTable(plan.id),
@@ -418,8 +425,113 @@ async function reconcile(shop, options) {
   return run;
 }
 
+/* ------------------------------------------------------- live (Admin API) */
+
+/**
+ * How long a live answer is reused. Short, because this is the check that is
+ * meant to be current — it only stops a burst of admin requests from each
+ * asking Shopify the same question.
+ */
+const LIVE_TTL_MS = 60000;
+
+/** shop -> promise, as with `reconciling`. */
+const syncing = new Map();
+
+/** shop -> { message, at }. Memory only: an error is about this process's
+ *  last attempt, and a stale one on disk would outlive its cause. */
+const liveErrors = new Map();
+
+/**
+ * Ask Shopify, through the Admin API, what this shop is subscribed to right now,
+ * and make the record agree. Needs the merchant's session token, so it runs
+ * from authenticated admin routes only.
+ *
+ * This is the primary source of truth. The pricing-page redirect is only a hint
+ * that a change just happened, and the Partner API is the fallback for when
+ * this call fails. A failure leaves the recorded plan alone, for the same
+ * reason reconcile() does: an outage must never downgrade a paying shop.
+ */
+async function syncLive(shop, sessionToken, options) {
+  if (!settingsStore.isValidShop(shop)) return read(shop);
+
+  const record = load(shop);
+  const force = Boolean(options && options.force);
+  const checkedAt = record.live && record.live.checkedAt;
+
+  if (!force && checkedAt && !liveErrors.has(shop) && Date.now() - Date.parse(checkedAt) < LIVE_TTL_MS) {
+    return record;
+  }
+
+  const running = syncing.get(shop);
+  if (running) return running;
+
+  const run = (async () => {
+    const subs = await shopifyAdmin.activeSubscriptions(shop, sessionToken);
+    const sub = subs[0] || null;
+    const plan = plans.fromSubscription(sub);
+    const now = new Date().toISOString();
+
+    let trialEndsAt = null;
+    if (sub && sub.trialDays && sub.createdAt) {
+      const end = Date.parse(sub.createdAt) + sub.trialDays * 86400000;
+      if (end > Date.now()) trialEndsAt = new Date(end).toISOString();
+    }
+
+    liveErrors.delete(shop);
+    return set(shop, plan.id, 'shopify-live', {
+      planHandle: plan.handle,
+      verifiedAt: now,
+      trialEndsAt,
+      cancelAtEndOfCycle: false,
+      live: {
+        checkedAt: now,
+        subscribed: Boolean(sub),
+        name: sub ? sub.name : null,
+        status: sub ? sub.status : null,
+        test: sub ? sub.test : false,
+        interval: sub ? sub.interval : null,
+        price: sub ? sub.price : null,
+        currentPeriodEnd: sub ? sub.currentPeriodEnd : null,
+      },
+    });
+  })()
+    .catch(async (err) => {
+      console.error('live plan check failed for ' + shop + ':', err.message);
+      liveErrors.set(shop, { message: err.message, at: new Date().toISOString() });
+      // Fall back to the Partner API where it is configured; otherwise the
+      // recorded plan stands.
+      return reconcile(shop, options);
+    })
+    .finally(() => {
+      syncing.delete(shop);
+    });
+
+  syncing.set(shop, run);
+  return run;
+}
+
+/** What the admin shows about the live check, error included. */
+function liveStatus(shop, record) {
+  const error = liveErrors.get(shop) || null;
+  const live = record.live || null;
+  return {
+    checked: Boolean(live && live.checkedAt),
+    checkedAt: live ? live.checkedAt : null,
+    subscribed: Boolean(live && live.subscribed),
+    name: live ? live.name : null,
+    status: live ? live.status : null,
+    test: Boolean(live && live.test),
+    interval: live ? live.interval : null,
+    price: live ? live.price : null,
+    currentPeriodEnd: live ? live.currentPeriodEnd : null,
+    error: error ? error.message : null,
+    errorAt: error ? error.at : null,
+  };
+}
+
 module.exports = {
   APP_HANDLE,
+  LIVE_TTL_MS,
   PARTNER_CONFIGURED,
   PLANS_DIR,
   RECONCILE_TTL_MS,
@@ -433,4 +545,5 @@ module.exports = {
   remove,
   set,
   statusFor,
+  syncLive,
 };

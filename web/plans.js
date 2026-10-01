@@ -142,6 +142,27 @@ function resolve(handle) {
   return key === FREE.handle ? FREE : BY_ID.get('monthly');
 }
 
+/**
+ * Match a live Admin API subscription to one of ours.
+ *
+ * An AppSubscription carries the plan's display name, not its handle, so the
+ * name is tried against both, and failing that the billing interval decides:
+ * an annual charge is the yearly plan, anything else the monthly one. Same rule
+ * as resolve() — a shop that is paying never lands on Free because of a
+ * spelling difference in the Partner dashboard.
+ */
+function fromSubscription(sub) {
+  if (!sub) return FREE;
+
+  const name = String(sub.name || '').trim().toLowerCase();
+  const slug = name.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const matched = PLANS.find((plan) =>
+    plan.id !== 'free' && (plan.handle === name || plan.handle === slug || plan.name.toLowerCase() === name));
+  if (matched) return matched;
+
+  return sub.interval === 'ANNUAL' ? BY_ID.get('annual') : BY_ID.get('monthly');
+}
+
 function can(planId, section) {
   return byId(planId).sections.includes(section);
 }
@@ -216,6 +237,7 @@ module.exports = {
   annualSavingPercent,
   byId,
   can,
+  fromSubscription,
   has,
   publicTable,
   resolve,

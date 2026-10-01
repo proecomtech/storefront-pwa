@@ -1097,7 +1097,7 @@ async function run() {
   ok('the declared auth redirect URL is routed', res.status === 302, 'got ' + res.status);
   ok('and it lands the merchant in the app inside Shopify admin',
     (res.headers.get('location') || '') ===
-      'https://admin.shopify.com/store/demo-store/apps/proecomtech-storefront-pwa',
+      'https://admin.shopify.com/store/demo-store/apps/pwa',
     res.headers.get('location'));
 
   // `shop` becomes the host of a Location header, so anything that is not a

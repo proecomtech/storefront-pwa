@@ -105,6 +105,9 @@ function requireSession(req, res, next) {
   if (!shop) return res.status(401).json({ error: 'Invalid or expired session token' });
 
   req.shop = shop;
+  // Kept for token exchange (web/shopify-admin.js), which needs the token
+  // itself and not just the shop it names.
+  req.sessionToken = token;
   return next();
 }
 
