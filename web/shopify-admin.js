@@ -38,13 +38,32 @@ async function post(url, headers, body) {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
       body: JSON.stringify(body),
     });
-    const json = await res.json().catch(() => null);
-    return { status: res.status, ok: res.ok, json };
+    const text = await res.text().catch(() => '');
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch (err) {
+      json = null;
+    }
+    return { status: res.status, ok: res.ok, json, text };
   } catch (err) {
     throw new Error(err.name === 'AbortError' ? 'Shopify did not answer in time' : err.message);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Shopify's own words for a refusal. A bare status code tells nobody whether
+ * the problem is the token, the app's configuration or the store, and the body
+ * almost always says which.
+ */
+function reason(res) {
+  const errors = res.json && res.json.errors;
+  if (Array.isArray(errors)) return errors.map((e) => (e && e.message) || String(e)).join('; ');
+  if (errors && typeof errors === 'object') return JSON.stringify(errors);
+  if (errors) return String(errors);
+  return String(res.text || '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'no details given';
 }
 
 /** Swap a verified session token for an offline Admin API token. */
@@ -95,7 +114,7 @@ async function graphql(shop, sessionToken, query, variables) {
     res = await post(url, { 'X-Shopify-Access-Token': token }, { query, variables });
   }
 
-  if (!res.ok) throw new Error('Admin API HTTP ' + res.status);
+  if (!res.ok) throw new Error('Admin API HTTP ' + res.status + ': ' + reason(res));
   if (res.json && res.json.errors && res.json.errors.length) {
     throw new Error(res.json.errors.map((e) => e.message).join('; '));
   }
