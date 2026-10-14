@@ -27,6 +27,10 @@ const STYLES = `
             --nav:#16182b; --nav-fg:#ececf4; --nav-muted:#8f93b0; --nav-active:rgba(255,255,255,.1);
             --tint:rgba(255,255,255,.06); --shadow:0 1px 2px rgba(0,0,0,.4); }
   }
+  /* App Bridge writes this inset onto the document at runtime, leaving a blank
+     strip under the admin. !important because its value arrives as an inline
+     style, which outranks any normal stylesheet rule. */
+  :root, body { --shopify-safe-area-inset-bottom: 0px !important; }
   * { box-sizing: border-box; }
   /* The hidden attribute is only a UA rule of display:none, so any class that
      sets display silently outranks it. The admin toggles visibility this way in
