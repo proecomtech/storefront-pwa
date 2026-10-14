@@ -125,6 +125,7 @@ function blank(shop) {
     // When the merchant last chose Free on Shopify's pricing page — see
     // claimHandle().
     downgradedAt: null,
+    leftSubscriptionId: null,
     // The subscription as the Admin API last reported it — see syncLive().
     live: null,
     // Every change, oldest first, capped. A plan dispute is the one support
@@ -231,20 +232,27 @@ function claimHandle(shop, handle) {
   return set(shop, plan.id, 'shopify-redirect', {
     planHandle: String(handle || '').toLowerCase(),
     downgradedAt: plan.id === 'free' ? new Date().toISOString() : null,
+    leftSubscriptionId: null,
   });
 }
 
 /**
  * Whether a merchant's own move to Free outranks what Shopify reports.
  *
- * Only a subscription created after the downgrade can undo it — that is a new
- * purchase. One that predates it is the plan the merchant just left.
+ * The guard is pinned to one subscription: the one Shopify was still reporting
+ * on the first check after the downgrade, which is the plan the merchant left.
+ * Any other subscription is a new purchase and is honoured at once. Matching by
+ * id rather than by createdAt is deliberate — comparing Shopify's clock with
+ * this server's hid real upgrades whenever the two disagreed.
  */
 function downgradeStands(record, sub) {
-  if (!record.downgradedAt) return false;
-  if (!sub) return true;
+  if (!record.downgradedAt || !sub) return false;
+  if (record.leftSubscriptionId) return sub.id === record.leftSubscriptionId;
+
+  // First sight since the downgrade. Pinning needs the subscription to predate
+  // the claim; a minute of slack absorbs clock drift between the two servers.
   const created = Date.parse(sub.createdAt || '');
-  return !(created > Date.parse(record.downgradedAt));
+  return !(created > Date.parse(record.downgradedAt) + 60000);
 }
 
 /** Called on app/uninstalled, alongside the settings, asset, stats and report
@@ -503,6 +511,13 @@ async function syncLive(shop, sessionToken, options) {
     const left = Boolean(reported) && downgradeStands(record, reported);
     const sub = left ? null : reported;
     const plan = plans.fromSubscription(sub);
+
+    // One line per check, so "stuck on a plan" can be read off the server log
+    // instead of reproduced: what Shopify said, and what this app made of it.
+    console.log('live plan for ' + shop + ': ' + (reported
+      ? JSON.stringify(reported.name) + ' ' + (reported.price ? reported.price.amount : '?') +
+        ' ' + reported.id + (left ? ' (the plan they left, ignored)' : '')
+      : 'no active subscription') + ' -> ' + plan.id);
     const now = new Date().toISOString();
 
     let trialEndsAt = null;
@@ -520,6 +535,7 @@ async function syncLive(shop, sessionToken, options) {
       // Kept only while the old subscription is still being reported; once it
       // is gone, or a newer one replaces it, the downgrade has nothing to guard.
       downgradedAt: left ? record.downgradedAt : null,
+      leftSubscriptionId: left ? reported.id : null,
       live: {
         checkedAt: now,
         subscribed: Boolean(sub),
