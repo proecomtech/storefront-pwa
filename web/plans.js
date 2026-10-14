@@ -138,8 +138,18 @@ function resolve(handle) {
   const matched = BY_HANDLE.get(key);
   if (matched) return matched;
 
+  // A free plan whose dashboard handle is not quite ours — "free-plan",
+  // "basic_free". Reading it as Free is safe in a way the paid fallback below
+  // is not: nobody gains anything by claiming the plan that costs nothing, and
+  // reading it as Monthly is what kept downgraded shops stuck on Pro.
+  if (looksFree(key)) return FREE;
+
   // A handle Shopify gave us for a plan that is not Free, that we cannot place.
-  return key === FREE.handle ? FREE : BY_ID.get('monthly');
+  return BY_ID.get('monthly');
+}
+
+function looksFree(text) {
+  return /(^|[^a-z0-9])free([^a-z0-9]|$)/.test(String(text || '').toLowerCase());
 }
 
 /**
@@ -153,6 +163,11 @@ function resolve(handle) {
  */
 function fromSubscription(sub) {
   if (!sub) return FREE;
+
+  // Shopify App Pricing can record the free plan as a live $0 subscription.
+  // Without this it matched no paid plan by name and fell through to Monthly.
+  const amount = sub.price && Number(sub.price.amount);
+  if (amount === 0 || looksFree(sub.name)) return FREE;
 
   const name = String(sub.name || '').trim().toLowerCase();
   const slug = name.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

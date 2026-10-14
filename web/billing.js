@@ -122,6 +122,9 @@ function blank(shop) {
     shopGid: null,
     cancelAtEndOfCycle: false,
     trialEndsAt: null,
+    // When the merchant last chose Free on Shopify's pricing page — see
+    // claimHandle().
+    downgradedAt: null,
     // The subscription as the Admin API last reported it — see syncLive().
     live: null,
     // Every change, oldest first, capped. A plan dispute is the one support
@@ -220,7 +223,28 @@ function set(shop, planId, source, extra) {
  */
 function claimHandle(shop, handle) {
   const plan = plans.resolve(handle);
-  return set(shop, plan.id, 'shopify-redirect', { planHandle: String(handle || '').toLowerCase() });
+  // A move to Free is remembered, because the subscription the merchant just
+  // left can go on being reported as active for a while — by the Admin API and
+  // by the Partner API with cancelAtEndOfCycle — and the forced live check
+  // that follows this claim used to read it and put the shop straight back on
+  // Pro. Trusting a downgrade costs nothing; see downgradeStands().
+  return set(shop, plan.id, 'shopify-redirect', {
+    planHandle: String(handle || '').toLowerCase(),
+    downgradedAt: plan.id === 'free' ? new Date().toISOString() : null,
+  });
+}
+
+/**
+ * Whether a merchant's own move to Free outranks what Shopify reports.
+ *
+ * Only a subscription created after the downgrade can undo it — that is a new
+ * purchase. One that predates it is the plan the merchant just left.
+ */
+function downgradeStands(record, sub) {
+  if (!record.downgradedAt) return false;
+  if (!sub) return true;
+  const created = Date.parse(sub.createdAt || '');
+  return !(created > Date.parse(record.downgradedAt));
 }
 
 /** Called on app/uninstalled, alongside the settings, asset, stats and report
@@ -401,7 +425,12 @@ async function reconcile(shop, options) {
       shopId: gid,
     });
 
-    const active = data.activeSubscription;
+    // A subscription set to lapse at the end of its cycle, on a shop whose
+    // merchant has moved to Free, is the one they left — the Partner API keeps
+    // it active until the period ends, and honouring it is what kept
+    // downgraded shops on Pro.
+    const lapsing = Boolean(data.activeSubscription && data.activeSubscription.cancelAtEndOfCycle);
+    const active = record.downgradedAt && lapsing ? null : data.activeSubscription;
     const item = active && Array.isArray(active.items) ? active.items[0] : null;
     const plan = active ? plans.resolve(item && item.handle) : plans.byId('free');
 
@@ -411,6 +440,7 @@ async function reconcile(shop, options) {
       verifiedAt: new Date().toISOString(),
       cancelAtEndOfCycle: Boolean(active && active.cancelAtEndOfCycle),
       trialEndsAt: (active && active.trialEndsAt) || null,
+      downgradedAt: active ? null : record.downgradedAt || null,
     });
   })()
     .catch((err) => {
@@ -467,7 +497,11 @@ async function syncLive(shop, sessionToken, options) {
 
   const run = (async () => {
     const subs = await shopifyAdmin.activeSubscriptions(shop, sessionToken);
-    const sub = subs[0] || null;
+    const reported = subs[0] || null;
+    // The merchant moved to Free after this subscription began, so it is the
+    // one they left, still listed while Shopify winds it down.
+    const left = Boolean(reported) && downgradeStands(record, reported);
+    const sub = left ? null : reported;
     const plan = plans.fromSubscription(sub);
     const now = new Date().toISOString();
 
@@ -483,6 +517,9 @@ async function syncLive(shop, sessionToken, options) {
       verifiedAt: now,
       trialEndsAt,
       cancelAtEndOfCycle: false,
+      // Kept only while the old subscription is still being reported; once it
+      // is gone, or a newer one replaces it, the downgrade has nothing to guard.
+      downgradedAt: left ? record.downgradedAt : null,
       live: {
         checkedAt: now,
         subscribed: Boolean(sub),
