@@ -167,12 +167,12 @@ function fromSubscription(sub) {
   const name = String(sub.name || '').trim().toLowerCase();
   const slug = name.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-  // Shopify App Pricing can record the free plan as a live $0 subscription.
-  // Without this it matched no paid plan by name and fell through to Monthly.
-  // The name has to BE the free plan's, not merely mention "free": a paid plan
-  // called "Pro – 7 day free trial" is a paid plan.
-  const amount = sub.price ? Number(sub.price.amount) : NaN;
-  if (amount === 0 || name === FREE.name.toLowerCase() || slug === FREE.handle) return FREE;
+  // Shopify App Pricing can record the free plan as a live subscription. It is
+  // recognised by name only — exactly the free plan's, not merely mentioning
+  // "free" ("Pro – 7 day free trial" is paid) — and never by a $0 price: a paid
+  // plan reads $0.00 on a development store or under a full discount, and
+  // treating that as Free locked a shop with an active "Premium" plan out.
+  if (name === FREE.name.toLowerCase() || slug === FREE.handle) return FREE;
   const matched = PLANS.find((plan) =>
     plan.id !== 'free' && (plan.handle === name || plan.handle === slug || plan.name.toLowerCase() === name));
   if (matched) return matched;
