@@ -9,7 +9,7 @@
     "deploy": "shopify app deploy",
     "backend": "node web/server.js",
     "start": "node web/server.js",
-    "test": "node test/smoke.js"
+    "test": "node test/smoke.js && node test/billing.js"
   },
   "engines": {
     "node": ">=20"
