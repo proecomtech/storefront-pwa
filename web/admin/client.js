@@ -938,25 +938,49 @@ function script() {
     if (entry.current) {
       var here = node('span', 'muted', entry.id === 'free'
         ? 'You are on this plan.'
-        : 'You are on this plan. Change or cancel on Shopify.');
+        : 'You are on this plan. Choose Free to cancel it.');
       card.appendChild(here);
     }
 
-    // Always a link to Shopify's own plan page, even on the current plan —
-    // that page is also where a merchant cancels or switches, and sending them
-    // somewhere else to do it would be the app standing in the way.
-    var action = document.createElement('a');
-    action.className = 'btn' + (entry.current ? ' secondary' : '');
-    action.href = plan.upgradeUrl;
-    // The admin is an iframe. Without _top the merchant would get Shopify's
-    // billing page rendered inside this app's panel, which Shopify refuses to
-    // frame anyway.
-    action.target = '_top';
-    action.textContent = entry.current
-      ? (entry.id === 'free' ? 'See paid plans' : 'Manage on Shopify')
-      : 'Choose ' + entry.name;
+    // Paid plans create a charge through the Billing API and send the merchant
+    // to Shopify's approval screen. Choosing Free cancels the paid charge.
+    if (!(entry.current && entry.id === 'free')) {
+      var action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'btn' + (entry.current ? ' secondary' : '');
+      action.textContent = entry.current
+        ? 'Your current plan'
+        : (entry.id === 'free' ? 'Switch to Free' : 'Choose ' + entry.name);
+      action.disabled = entry.current;
 
-    card.appendChild(action);
+      action.addEventListener('click', function () {
+        action.disabled = true;
+        var label = action.textContent;
+        action.textContent = 'Please wait\\u2026';
+
+        var request = entry.id === 'free'
+          ? api('/api/plan/cancel', { method: 'POST' }).then(function (status) {
+              renderPlan(status);
+              banner('info', 'Plan updated', ['You are now on the Free plan.']);
+            })
+          : api('/api/plan/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ planId: entry.id })
+            }).then(function (body) {
+              // Shopify's approval screen cannot be framed, so leave the iframe.
+              window.open(body.confirmationUrl, '_top');
+            });
+
+        request.catch(function (err) {
+          action.disabled = false;
+          action.textContent = label;
+          banner('bad', 'Could not change your plan', [err.message]);
+        });
+      });
+
+      card.appendChild(action);
+    }
     return card;
   }
 

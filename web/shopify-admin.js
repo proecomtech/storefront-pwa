@@ -183,6 +183,56 @@ async function activeSubscriptions(shop, sessionToken) {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
+const SUBSCRIPTION_CREATE_MUTATION = `
+  mutation CreateSubscription($name: String!, $returnUrl: URL!, $test: Boolean, $lineItems: [AppSubscriptionLineItemInput!]!) {
+    appSubscriptionCreate(name: $name, returnUrl: $returnUrl, test: $test, lineItems: $lineItems) {
+      confirmationUrl
+      userErrors { field message }
+    }
+  }
+`;
+
+/**
+ * Start a recurring charge and return the URL where the merchant approves it.
+ * Shopify hosts that screen; nothing is billed until they accept. Needs no
+ * access scope, only the token this module already exchanges for.
+ */
+async function createSubscription(shop, sessionToken, options) {
+  const data = await graphql(shop, sessionToken, SUBSCRIPTION_CREATE_MUTATION, {
+    name: options.name,
+    returnUrl: options.returnUrl,
+    test: Boolean(options.test),
+    lineItems: [{
+      plan: {
+        appRecurringPricingDetails: {
+          price: { amount: options.amount, currencyCode: 'USD' },
+          interval: options.interval,
+        },
+      },
+    }],
+  });
+
+  const result = data.appSubscriptionCreate || {};
+  const errors = result.userErrors || [];
+  if (errors.length) throw new Error(errors.map((e) => e.message).join('; '));
+  if (!result.confirmationUrl) throw new Error('Shopify returned no confirmation URL');
+  return result.confirmationUrl;
+}
+
+const SUBSCRIPTION_CANCEL_MUTATION = `
+  mutation CancelSubscription($id: ID!) {
+    appSubscriptionCancel(id: $id) {
+      userErrors { field message }
+    }
+  }
+`;
+
+async function cancelSubscription(shop, sessionToken, id) {
+  const data = await graphql(shop, sessionToken, SUBSCRIPTION_CANCEL_MUTATION, { id });
+  const errors = (data.appSubscriptionCancel && data.appSubscriptionCancel.userErrors) || [];
+  if (errors.length) throw new Error(errors.map((e) => e.message).join('; '));
+}
+
 /** Called on app/uninstalled: the token died with the installation. */
 function forget(shop) {
   tokens.delete(shop);
@@ -191,5 +241,7 @@ function forget(shop) {
 module.exports = {
   ADMIN_API_VERSION,
   activeSubscriptions,
+  cancelSubscription,
+  createSubscription,
   forget,
 };
