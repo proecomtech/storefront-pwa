@@ -592,19 +592,21 @@ the secret were wrong.
 
 ### Before the first paid install: define the plans
 
-Billing uses the **Billing API**: the plans are defined in `web/plans.js`, and
-Choose Pro creates a charge (`appSubscriptionCreate`) and sends the merchant to
-Shopify's approval screen. **Managed pricing must be switched off** in the
-Partner dashboard (Distribution > Pricing), or Shopify refuses these charges and
-shows a "Select a plan" page that 404s or lists no plans.
+Billing is Shopify App Pricing, so the three plans live in the **Partner
+dashboard**, not in this repo. Create them under the app's Pricing section with
+handles matching `PWA_PLAN_HANDLE_*` — `free`, `pro-monthly` and `pro-annual`
+unless you override them — at $0, $5.99/month and $59.88/year. They must be
+**published and public**, or Shopify's plan page says "No plans are available".
 
-After deploying, check on a dev store:
+Two things to check after the first real subscription:
 
-1. Plans > Choose Pro opens Shopify's approval screen (a test charge on a dev
-   store), and approving returns to the app showing Pro.
-2. Switch to Free cancels the charge and the app shows Free.
-   If Choose Pro shows an error banner, the message is Shopify's own; the server
-   needs `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET` for token exchange.
+1. The Upgrade buttons open
+   `https://admin.shopify.com/store/<store>/charges/<app handle>/pricing_plans`.
+   A 404 there means `PWA_APP_HANDLE` does not match `handle` in
+   `shopify.app.toml`.
+2. The admin's Plans page reports the right plan after Shopify redirects back.
+   If it says "Free" for a shop that just paid, the plan handle in the Partner
+   dashboard does not match the env var.
 
 Set `SHOPIFY_PARTNER_*` as soon as you have a Partner API client. Until you do,
 the app cannot see a cancellation made from a merchant's Apps and sales channels

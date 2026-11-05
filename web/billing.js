@@ -277,61 +277,7 @@ function remove(shop) {
  *  it; the app only has to get the URL right and open it in the top frame. */
 function pricingUrl(shop) {
   const handle = String(shop || '').replace(/\.myshopify\.com$/i, '');
-  // The app's own Plans page. Plans are bought through /api/plan/subscribe; the
-  // managed-pricing page (/charges/<handle>/pricing_plans) is deliberately not
-  // used, since it 404s or lists no plans unless dashboard pricing is published.
-  return 'https://admin.shopify.com/store/' + handle + '/apps/' + APP_HANDLE;
-}
-
-/** Charges are real unless PWA_BILLING_TEST=1. Shopify marks any charge on a
- *  development store as a test regardless, so this only matters for a live
- *  store you want to try without paying. */
-const BILLING_TEST = process.env.PWA_BILLING_TEST === '1';
-
-/**
- * Create the charge for a paid plan and return Shopify's approval URL.
- *
- * The plan's name, price and interval come from plans.js, so the amount a
- * merchant approves is the amount the plan table advertised. The subscription
- * is named exactly as the plan is, which is what plans.fromSubscription matches
- * on when the live check reads it back.
- */
-async function subscribe(shop, sessionToken, planId) {
-  if (!settingsStore.isValidShop(shop)) throw new Error('invalid shop');
-
-  const plan = plans.byId(planId);
-  if (plan.id === 'free' || !plan.priceCents) {
-    const err = new Error('That plan is not a paid plan.');
-    err.status = 400;
-    throw err;
-  }
-
-  const storeHandle = shop.replace(/\.myshopify\.com$/i, '');
-  const returnUrl = APP_HANDLE
-    ? 'https://admin.shopify.com/store/' + storeHandle + '/apps/' + APP_HANDLE
-    : 'https://' + shop + '/admin';
-
-  const url = await shopifyAdmin.createSubscription(shop, sessionToken, {
-    name: plan.name,
-    amount: (plan.priceCents / 100).toFixed(2),
-    interval: plan.interval === 'year' ? 'ANNUAL' : 'EVERY_30_DAYS',
-    returnUrl,
-    test: BILLING_TEST,
-  });
-
-  console.log('subscription started for ' + shop + ': ' + plan.id);
-  return url;
-}
-
-/** Move a shop to Free: cancel whatever Shopify says is active. */
-async function downgrade(shop, sessionToken) {
-  const subs = await shopifyAdmin.activeSubscriptions(shop, sessionToken);
-  for (const sub of subs) await shopifyAdmin.cancelSubscription(shop, sessionToken, sub.id);
-
-  // Recorded as the merchant's own move to Free, so a subscription Shopify
-  // still lists while winding down does not put the shop back on Pro.
-  claimHandle(shop, plans.byId('free').handle);
-  return syncLive(shop, sessionToken, { force: true });
+  return 'https://admin.shopify.com/store/' + handle + '/charges/' + APP_HANDLE + '/pricing_plans';
 }
 
 /**
@@ -644,7 +590,6 @@ module.exports = {
   RECONCILE_TTL_MS,
   can,
   claimHandle,
-  downgrade,
   has,
   planFor,
   pricingUrl,
@@ -653,6 +598,5 @@ module.exports = {
   remove,
   set,
   statusFor,
-  subscribe,
   syncLive,
 };

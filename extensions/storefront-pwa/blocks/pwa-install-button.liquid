@@ -1,0 +1,99 @@
+{% comment %}
+  Pocketfront PWA — Install button (app embed).
+
+  A visible, always-present "Install app" button. The other embed ("Pocketfront
+  PWA") works in <head> and renders nothing by design; this one is the part a
+  merchant, a customer and the Theme Editor can actually see.
+
+  It carries the [data-pwa-install] attribute, which the storefront runtime
+  (/apps/pwa/pwa.js, loaded by the other embed) listens for. A click opens the
+  browser's native install dialog, or step-by-step directions where the browser
+  has none. Turn on BOTH embeds: this one is only the button.
+
+  Hidden inside the installed app window, where there is nothing left to install.
+{% endcomment %}
+
+{%- liquid
+  assign btn_label = block.settings.label | default: 'Install app'
+  assign btn_pos = block.settings.position | default: 'bottom-right'
+-%}
+
+<style>
+  .pocketfront-pwa-install {
+    position: fixed;
+    z-index: 2147483000;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 999px;
+    background: {{ block.settings.background | default: '#111111' }};
+    color: {{ block.settings.text_color | default: '#ffffff' }};
+    font: 600 14px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+    cursor: pointer;
+  }
+  .pocketfront-pwa-install--bottom-right { right: 16px; }
+  .pocketfront-pwa-install--bottom-left { left: 16px; }
+  .pocketfront-pwa-install svg { width: 16px; height: 16px; flex: none; }
+  .pocketfront-pwa-install:focus-visible { outline: 3px solid #4d90fe; outline-offset: 2px; }
+  /* Set on <html> by the runtime when the store is running as an installed app. */
+  [data-pwa-display='standalone'] .pocketfront-pwa-install { display: none; }
+</style>
+
+<button
+  type="button"
+  class="pocketfront-pwa-install pocketfront-pwa-install--{{ btn_pos }}"
+  data-pwa-install
+  aria-label="{{ btn_label | escape }}"
+>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 3v12"></path>
+    <path d="m7 10 5 5 5-5"></path>
+    <path d="M5 21h14"></path>
+  </svg>
+  <span>{{ btn_label | escape }}</span>
+</button>
+
+{% schema %}
+{
+  "name": "Pocketfront PWA install button",
+  "target": "body",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Shows an Install app button on your storefront. Also turn on the Pocketfront PWA embed, which loads the app itself."
+    },
+    {
+      "type": "text",
+      "id": "label",
+      "label": "Button text",
+      "default": "Install app"
+    },
+    {
+      "type": "select",
+      "id": "position",
+      "label": "Position",
+      "options": [
+        { "value": "bottom-right", "label": "Bottom right" },
+        { "value": "bottom-left", "label": "Bottom left" }
+      ],
+      "default": "bottom-right"
+    },
+    {
+      "type": "color",
+      "id": "background",
+      "label": "Button color",
+      "default": "#111111"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text color",
+      "default": "#ffffff"
+    }
+  ]
+}
+{% endschema %}

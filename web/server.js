@@ -916,35 +916,6 @@ app.post('/api/plan', auth.requireSession, async (req, res, next) => {
   }
 });
 
-/**
- * Start a paid plan. Returns the Shopify approval URL for the admin to open in
- * the top frame; nothing changes until the merchant approves it there.
- */
-app.post('/api/plan/subscribe', auth.requireSession, async (req, res, next) => {
-  try {
-    const planId = String((req.body && req.body.planId) || '');
-    const confirmationUrl = await billing.subscribe(req.shop, req.sessionToken, planId);
-    res.set('Cache-Control', 'no-store');
-    res.json({ confirmationUrl });
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    console.error('subscribe failed for ' + req.shop + ':', err.message);
-    return res.status(502).json({ error: 'Shopify could not start the subscription: ' + err.message });
-  }
-});
-
-/** Cancel the paid plan and return to Free. */
-app.post('/api/plan/cancel', auth.requireSession, async (req, res, next) => {
-  try {
-    await billing.downgrade(req.shop, req.sessionToken);
-    res.set('Cache-Control', 'no-store');
-    res.json(billing.statusFor(req.shop, stats.installsThisMonth(req.shop)));
-  } catch (err) {
-    console.error('cancel failed for ' + req.shop + ':', err.message);
-    res.status(502).json({ error: 'Shopify could not cancel the subscription: ' + err.message });
-  }
-});
-
 /* -------------------------------------------------------- reports & setup */
 
 /**
