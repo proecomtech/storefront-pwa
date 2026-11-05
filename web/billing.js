@@ -277,7 +277,10 @@ function remove(shop) {
  *  it; the app only has to get the URL right and open it in the top frame. */
 function pricingUrl(shop) {
   const handle = String(shop || '').replace(/\.myshopify\.com$/i, '');
-  return 'https://admin.shopify.com/store/' + handle + '/charges/' + APP_HANDLE + '/pricing_plans';
+  // The app's own Plans page. Plans are bought through /api/plan/subscribe; the
+  // managed-pricing page (/charges/<handle>/pricing_plans) is deliberately not
+  // used, since it 404s or lists no plans unless dashboard pricing is published.
+  return 'https://admin.shopify.com/store/' + handle + '/apps/' + APP_HANDLE;
 }
 
 /** Charges are real unless PWA_BILLING_TEST=1. Shopify marks any charge on a

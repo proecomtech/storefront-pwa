@@ -776,9 +776,9 @@ async function run() {
     planStatus.plans[2].priceLabel === '$59.88', planStatus.plans[2].priceLabel);
   ok('and the saving is worked out, not typed',
     planStatus.plans[2].savingPercent === 17, String(planStatus.plans[2].savingPercent));
-  ok('the upgrade link points at Shopify\'s own plan page',
-    planStatus.upgradeUrl === 'https://admin.shopify.com/store/demo-store/charges/' +
-      'proecomtech-storefront-pwa/pricing_plans', planStatus.upgradeUrl);
+  ok('the upgrade link points back into the app, not at managed pricing',
+    planStatus.upgradeUrl === 'https://admin.shopify.com/store/demo-store/apps/' +
+      'proecomtech-storefront-pwa', planStatus.upgradeUrl);
   // Without Partner credentials the app cannot re-check a plan with Shopify.
   // It has to say so rather than implying the answer is authoritative.
   ok('an unverified plan says so', planStatus.verified === false);
