@@ -346,7 +346,7 @@ proxy.get('/sw.js', (req, res) => {
   // README — so the worker's scope stays /apps/pwa/ and it never sees a
   // storefront navigation. Sent anyway: it costs one header, and it is what
   // makes the day Shopify changes its mind a config change rather than a
-  // rewrite. /apps/pwa/check reports which case a given storefront is in.
+  // rewrite. the proxy no longer serves a self-test page.
   res.set('Service-Worker-Allowed', '/');
 
   // A long-cached service worker is a fix you cannot ship. Browsers revalidate
@@ -434,19 +434,6 @@ proxy.get('/offline', (req, res) => {
   // a memorable bug.
   res.set('Cache-Control', 'no-store');
   res.type('text/html; charset=utf-8').send(pages.offline(req.settings));
-});
-
-/**
- * Storefront self-test.
- *
- * Same-origin with the storefront, which is what makes it worth having: the
- * only place a service worker's real scope can be observed is a page on the
- * origin it claims to control. Answers the three questions that actually
- * decide whether a store is installable, rather than asserting them.
- */
-proxy.get('/check', (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.type('text/html; charset=utf-8').send(pages.check(req.settings, req.proxyBase));
 });
 
 /**

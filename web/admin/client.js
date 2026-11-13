@@ -1818,7 +1818,6 @@ function script() {
   // Links that need the shop domain, which only the server knows at render time.
   var body = document.body;
   var themeEditor = body.getAttribute('data-theme-editor');
-  var check = body.getAttribute('data-check');
   var preview = body.getAttribute('data-preview');
 
   if (themeEditor) {
@@ -1829,16 +1828,6 @@ function script() {
     a.target = '_blank';
     a.rel = 'noopener';
     themeLink.appendChild(a);
-  }
-
-  if (check) {
-    var checkBox = el('checkLink');
-    clear(checkBox);
-    var b = node('a', null, 'run the storefront check');
-    b.href = check;
-    b.target = '_blank';
-    b.rel = 'noopener';
-    checkBox.appendChild(b);
   }
 
   // _blank, not _top: the merchant is mid-edit on this page and should come back

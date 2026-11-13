@@ -113,17 +113,15 @@ function homePage() {
     '</section>' +
 
     '<section>' +
-    '<h2>Two things to do by hand</h2>' +
+    '<h2>One thing to do by hand</h2>' +
     '<p class="hint">Neither can be done from here — both live in the theme, which this app has no ' +
     'permission to edit.</p>' +
     '<ol style="margin:0;padding-left:20px">' +
     '<li style="margin-bottom:8px">Turn on the <strong>Pocketfront PWA</strong> app embed in ' +
     '<span id="themeEditorLink">Theme editor &rsaquo; App embeds</span>. Nothing else has any effect until that is on.</li>' +
-    '<li>Then <span id="checkLink">open <code>/apps/pwa/check</code> on your storefront</span> ' +
-    'to confirm the manifest, the icons and the install path on a real page.</li>' +
     '</ol>' +
-    '<p class="hint" style="margin-top:14px">The <a href="#/setup">Quick setup wizard</a> checks both ' +
-    'of these against your live storefront and tells you which one is missing.</p>' +
+    '<p class="hint" style="margin-top:14px">The <a href="#/setup">Quick setup wizard</a> checks this ' +
+    'against your live storefront and tells you if it is missing.</p>' +
     '</section>' +
 
     '<section>' +
@@ -860,7 +858,6 @@ function html(shop, apiKey, planHandle) {
   const themeEditorLink = storeHandle
     ? 'https://admin.shopify.com/store/' + escapeHtml(storeHandle) + '/themes/current/editor?context=apps'
     : '';
-  const checkLink = shop ? 'https://' + escapeHtml(shop) + '/apps/pwa/check' : '';
   const previewLink = shop ? 'https://' + escapeHtml(shop) + '/?pwa-preview=1' : '';
 
   return `<!doctype html>
@@ -873,7 +870,7 @@ ${apiKey ? '<meta name="shopify-api-key" content="' + escapeHtml(apiKey) + '">' 
 ${shop && apiKey ? '<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>' : ''}
 <style>${STYLES}</style>
 </head>
-<body data-shop="${escapeHtml(shop || '')}" data-theme-editor="${themeEditorLink}" data-check="${checkLink}" data-preview="${previewLink}" data-plan-handle="${escapeHtml(planHandle || '')}">
+<body data-shop="${escapeHtml(shop || '')}" data-theme-editor="${themeEditorLink}" data-preview="${previewLink}" data-plan-handle="${escapeHtml(planHandle || '')}">
 <div class="shell" id="shell">
   ${sidebar()}
   <button type="button" class="navtoggle" id="navToggle" aria-label="Collapse the menu">&#8249;</button>
