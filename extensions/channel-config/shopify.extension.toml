@@ -1,0 +1,17 @@
+# Declares Pocketfront PWA as a SALES CHANNEL (App Store requirement 5.9.1:
+# mobile app builders must be sales channels so the apps they build can create
+# checkouts). After `shopify app deploy`, the app is listed under
+# Settings > Apps and sales channels / Sales channels in the Shopify admin,
+# instead of only under Apps.
+#
+# `uid` is assigned by the CLI on first `shopify app deploy` — do not hand-write it.
+
+[[extensions]]
+type = "channel_config"
+name = "Pocketfront PWA channel"
+handle = "channel-config"
+
+# Shopify creates the channel record automatically when a merchant installs the
+# app, so no Admin API call (and no access scope) is needed to make it appear
+# under Sales channels. Remove this once the app calls channelCreate itself.
+create_legacy_channel_on_app_install = true

@@ -1,0 +1,17 @@
+handle = "pocketfront-pwa"
+label = "Pocketfront PWA"
+icon = "pocketfront-pwa-icon.svg"
+
+[capabilities]
+bundles = true
+
+[requirements]
+# The PWA mirrors the Online Store, and checkout happens on Shopify's checkout.
+expectsOnlineStoreParity = true
+merchantOfRecord = "channel"
+
+# ASSUMPTION: adjust to the markets you support before deploying.
+[[countries]]
+code = "US"
+languages = [ "en" ]
+currency = "USD"
